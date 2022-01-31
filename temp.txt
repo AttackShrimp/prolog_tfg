@@ -1,0 +1,21 @@
+ancestor(anna,fanny)
+   parent(anna,fanny)
+      mother(anna,fanny)
+;
+ancestor(daniel,fanny)
+   parent(daniel,fanny)
+      mother(daniel,fanny)
+;
+ancestor(tim,fanny)
+   parent(tim,anna)
+      mother(tim,anna)
+   ancestor(anna,fanny)
+      parent(anna,fanny)
+         mother(anna,fanny)
+;
+ancestor(celine,fanny)
+   parent(celine,daniel)
+      father(celine,daniel)
+   ancestor(daniel,fanny)
+      parent(daniel,fanny)
+         mother(daniel,fanny)
