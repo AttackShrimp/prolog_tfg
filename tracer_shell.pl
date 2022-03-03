@@ -57,6 +57,7 @@ recognised_option(['-o',F],output(F)).
 recognised_option(['-g',F],goal(F)).
 
 :- dynamic cl/3.
+:- dynamic reading/3.
 :- dynamic comment/1.
 :- dynamic visible/1.
 :- dynamic unsafe/1.
@@ -95,6 +96,7 @@ pred_renaming(Preds,Prob,Atom,[(Prob,Pred,N)|Preds],Atom) :-
 
 load(File) :-
   retractall(cl(_,_,_)),
+  retractall(reading(_,_,_)),
   retractall(visible(_)),
   retractall(unsafe(_)),
   retractall(comment(_)),
@@ -103,24 +105,40 @@ load(File) :-
   retractall(explanations(_)),
   retractall(counter(_)),assertz(counter(0)),
   read_problog_program(File,Program),
+  %print(Program).
   file_base_name(File,FileNameExt),
   string_concat(FileName,'.pl',FileNameExt),
   assertz(filename(FileName)),
   %nl,print(read_problog_program(File,Program)),nl,
   replace_vars(Program,ProgramVars),
   %nl,print(replace_vars(Program,ProgramVars)),nl,
-  assert_clauses(ProgramVars),!.
+  assert_clauses(ProgramVars).
   %query(Atom),
+
+process_traces([],[]).
+process_traces([T|R],[TT|RR]) :-
+  process_trace(T,TT),
+  process_traces(R,RR).
+ 
+process_trace([],[]).
+process_trace([call(N,A)|R],[call(N,A,S)|RT]) :-
+  (reading(A,String,Vars) -> format(string(S),String,Vars)
+    ; term_string(A,S)),
+  process_trace(R,RT).
 
 run(Q) :-
   findall(Trace,eval(0,Q,Trace),Traces),
-  print_traces(Traces),
-  write_traces(Traces).
+  %print(Traces),nl,
+  process_traces(Traces,Traces2),  
+  %print(Traces2),nl,
+  print_traces(Traces2),
+  write_traces(Traces2). 
 
 write_traces(Trace) :-
   open('temp.txt',write,Stream),
   set_prolog_IO(user_input,Stream,user_error),
-  (cli_output(raw) -> print(Trace); print_traces(Trace)),
+  print(Trace),
+  %print_traces(Trace),
   close(Stream).
 
 print_traces([]).
@@ -130,9 +148,11 @@ print_traces([Trace|R]) :-
   print_trace(Trace),
   print(';'),nl,
   print_traces(R).
+
 print_trace([]).
-print_trace([call(N,A)|R]) :-
-  tab(N*3),format("~p~n",[A]),
+print_trace([call(N,_A,S)|R]) :-
+%  tab(N*3),format("~p~n",[A]),
+  tab(N*3),format(S),nl,
   print_trace(R).
 
 eval(_,[],[]).
@@ -204,7 +224,7 @@ assert_clauses([visible(Preds)|R]) :-
 assert_clauses([unsafe(Preds)|R]) :-
   !,assert_unsafe_preds(Preds),
   assert_clauses(R).
-assert_clauses([Cl|R]) :-
+assert_clauses([Cl|R]) :- 
   assertz(Cl),
   assert_clauses(R).
 
@@ -224,6 +244,12 @@ replace_vars([],[]).
 replace_vars([visible(L)|R],[visible(L)|RT]) :- 
   replace_vars(R,RT).
 replace_vars([unsafe(L)|R],[unsafe(L)|RT]) :- 
+  replace_vars(R,RT).
+replace_vars([reading(Q,String,Vars)|R],[reading(Q3,String,V4)|RT]) :- 
+  V =.. [foo|Vars],
+  rvars([Q,V],[Q2,V2],[],-1),
+  varnumbers([Q2,V2],[Q3,V3]),
+  V3 =.. [_|V4],
   replace_vars(R,RT).
 replace_vars([comment(C)|R],[comment(C)|RT]) :- 
   replace_vars(R,RT).
@@ -252,6 +278,5 @@ rvars_args([var(X)|R],VarList,N,['$VAR'(M)|RR],NVarList,NN) :-
   rvars_args(R,[(X,M)|VarList],M,RR,NVarList,NN).
 rvars_args([T|R],VarList,N,[T|RR],NVarList,NN) :-
   rvars_args(R,VarList,N,RR,NVarList,NN).
-
 
 

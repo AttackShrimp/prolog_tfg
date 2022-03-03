@@ -1,3 +1,8 @@
+%!read mother(A,B) as: A is the mother of B
+%!read father(A,B) as: A is the father of B
+%!read parent(A,B) as: A is the parent of B
+%!read ancestor(A,B) as: A is the ancestor of B
+
 mother(tim, anna).
 mother(anna, fanny).
 mother(daniel, fanny).

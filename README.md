@@ -50,10 +50,47 @@ ancestor(celine,fanny)
 
 true.
 ```
+If the example file contains a specification to "read" the atoms, then the trace above is formatted accordingly. For instance, given the following 
+specifications
+
+```
+%!read mother(A,B) as: A is the mother of B
+%!read father(A,B) as: A is the father of B
+%!read parent(A,B) as: A is the parent of B
+%!read ancestor(A,B) as: A is the ancestor of B
+```
+in file ``ancestor.pl``, we get the following
+output instead:
+
+```
+anna is the ancestor of fanny
+   anna is the parent of fanny
+      anna is the mother of fanny
+;
+daniel is the ancestor of fanny
+   daniel is the parent of fanny
+      daniel is the mother of fanny
+;
+tim is the ancestor of fanny
+   tim is the parent of anna
+      tim is the mother of anna
+   anna is the ancestor of fanny
+      anna is the parent of fanny
+         anna is the mother of fanny
+;
+celine is the ancestor of fanny
+   celine is the parent of daniel
+      celine is the father of daniel
+   daniel is the ancestor of fanny
+      daniel is the parent of fanny
+         daniel is the mother of fanny
+
+```
+
 By default, the output is also saved in file ```temp.txt``` as follows:
 
 ```
-[[call(0,ancestor(anna,fanny)),call(1,parent(anna,fanny)),call(2,mother(anna,fanny))],[call(0,ancestor(daniel,fanny)),call(1,parent(daniel,fanny)),call(2,mother(daniel,fanny))],[call(0,ancestor(tim,fanny)),call(1,parent(tim,anna)),call(2,mother(tim,anna)),call(1,ancestor(anna,fanny)),call(2,parent(anna,fanny)),call(3,mother(anna,fanny))],[call(0,ancestor(celine,fanny)),call(1,parent(celine,daniel)),call(2,father(celine,daniel)),call(1,ancestor(daniel,fanny)),call(2,parent(daniel,fanny)),call(3,mother(daniel,fanny))]]
+[[[call(0,ancestor(anna,fanny),"anna is the ancestor of fanny"),call(1,parent(anna,fanny),"anna is the parent of fanny"),call(2,mother(anna,fanny),"anna is the mother of fanny")],[call(0,ancestor(daniel,fanny),"daniel is the ancestor of fanny"),call(1,parent(daniel,fanny),"daniel is the parent of fanny"),call(2,mother(daniel,fanny),"daniel is the mother of fanny")],[call(0,ancestor(tim,fanny),"tim is the ancestor of fanny"),call(1,parent(tim,anna),"tim is the parent of anna"),call(2,mother(tim,anna),"tim is the mother of anna"),call(1,ancestor(anna,fanny),"anna is the ancestor of fanny"),call(2,parent(anna,fanny),"anna is the parent of fanny"),call(3,mother(anna,fanny),"anna is the mother of fanny")],[call(0,ancestor(celine,fanny),"celine is the ancestor of fanny"),call(1,parent(celine,daniel),"celine is the parent of daniel"),call(2,father(celine,daniel),"celine is the father of daniel"),call(1,ancestor(daniel,fanny),"daniel is the ancestor of fanny"),call(2,parent(daniel,fanny),"daniel is the parent of fanny"),call(3,mother(daniel,fanny),"daniel is the mother of fanny")]]
 ```
 The tracer can also be used as a shell command:
 

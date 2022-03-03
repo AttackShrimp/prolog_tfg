@@ -16,6 +16,17 @@ clauses([H|T]) -->
   clauses(T).
 clauses([]) --> [].
 
+clause(reading(Atom,String,ListVars)) -->
+  [punct("%")],
+  [punct("!")],
+  [word("read")],
+  atom_ast(Atom),
+  [word("as")],
+  [punct(":")],
+  comment_ast(C),
+  [cntrl("\n")],
+  {process_text(Atom,C,StringList,ListVars),atomics_to_string(StringList," ",String)}.
+
 clause(visible([(Pred,N)|R])) -->
   [punct("%")],
   [word("visible")],
@@ -149,3 +160,18 @@ problog_prob(prob(Prob)) -->
   [word(N2)],
   {string_concat(N1,".",Temp),string_concat(Temp,N2,N),term_string(Prob,N)},
   [cntrl("\n")].
+
+process_text(Atom,C,String,ListVars) :-
+  vars_atom(Atom,Vars),
+  pt(Vars,C,String,ListVars).
+
+pt(_Vars,[],[],[]).
+pt(Vars,[V|R],["~p"|String],[var(V)|ListVars]) :-
+  member(var(V),Vars),!,
+  pt(Vars,R,String,ListVars).
+pt(Vars,[W|R],[W|String],ListVars) :-
+  pt(Vars,R,String,ListVars).
+
+
+vars_atom(Atom,Vars) :-
+  Atom =.. [_|Vars].
