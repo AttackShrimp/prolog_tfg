@@ -9,7 +9,8 @@
 :- dynamic verbose/0.
 
 main :- 
-    current_prolog_flag(argv,ArgV),
+    %current_prolog_flag(argv,ArgV),
+    current_prolog_flag(os_argv,[_,_|ArgV]),
     get_options(ArgV,Options,RemArgV), !,
     (RemArgV = [FileName] 
         -> assert(cli_initial_file(FileName))
@@ -55,6 +56,8 @@ recognise_option(Inputs,Flag,RemInputs) :-
 recognised_option(['-f',NT],file(NT)).
 recognised_option(['-o',F],output(F)).
 recognised_option(['-g',F],goal(F)).
+
+%%%%%%%%%%%%%%%%%%%%% tracer.pl %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 :- dynamic cl/3.
 :- dynamic reading/3.
@@ -105,7 +108,7 @@ load(File) :-
   retractall(explanations(_)),
   retractall(counter(_)),assertz(counter(0)),
   read_problog_program(File,Program),
-  %print(Program).
+  %print(Program),
   file_base_name(File,FileNameExt),
   string_concat(FileName,'.pl',FileNameExt),
   assertz(filename(FileName)),
@@ -124,6 +127,15 @@ process_trace([],[]).
 process_trace([call(N,A)|R],[call(N,A,S)|RT]) :-
   (reading(A,String,Vars) -> format(string(S),String,Vars)
     ; term_string(A,S)),
+  process_trace(R,RT).
+process_trace([not_call(N,A)|R],[not_call(N,A,S)|RT]) :-
+  (reading(not(A),String,Vars) -> format(string(S),String,Vars)
+    ; term_string(A,AS), string_concat("not ",AS,S)),
+  process_trace(R,RT).
+process_trace([failed_call(N,A)|R],[failed_call(N,A,S2)|RT]) :-
+  (reading(A,String,Vars) -> format(string(S),String,Vars)
+    ; term_string(A,S)),
+  string_concat("(failed) ", S, S2),
   process_trace(R,RT).
 
 run(Q) :-
@@ -154,16 +166,67 @@ print_trace([call(N,_A,S)|R]) :-
 %  tab(N*3),format("~p~n",[A]),
   tab(N*3),format(S),nl,
   print_trace(R).
+print_trace([not_call(N,_A,S)|R]) :-
+%  tab(N*3),format("~p~n",[A]),
+  tab(N*3),format(S),nl,
+  print_trace(R).
+print_trace([failed_call(N,_A,S)|R]) :-
+%  tab(N*3),format("~p~n",[A]),
+  tab(N*3),format(S),nl,
+  print_trace(R).
 
 eval(_,[],[]).
 eval(N,[ret|R],Trace) :-
    M is N-1,
   eval(M,R,Trace).
+eval(N,[A|R],[call(N,A)|Trace]) :-
+  predicate_property(A,built_in),
+  \+ predicate_name(A,"not/1"), 
+  !,
+  call(A),
+  eval(N,R,Trace).
+eval(N,[not(A)|R],[not_call(N,A)|Trace]) :- 
+  ground(A),
+  \+ cl(_,A,_Body),
+  eval(N,R,Trace).
+eval(N,[not(A)|R],[not_call(N,A)|Trace]) :- 
+  ground(A),
+  cl(_,A,Body),
+  M is N+1,
+  eval_not(M,Body,Trace1),
+  !,
+  eval(N,R,Trace2),
+  append(Trace1,Trace2,Trace).
 eval(N,[A|R],[call(N,A)|Trace]) :- 
   cl(_,A,Body),
   append(Body,[ret|R],RB),
   M is N+1,
   eval(M,RB,Trace).
+
+eval_not(N,[ret|R],Trace) :-
+   M is N-1,
+  eval_not(M,R,Trace).
+eval_not(N,[not(A)|_R],[call(N,A)|Trace]) :- 
+  ground(A),
+  cl(_,A,Body),
+  M is N+1,
+  eval(M,Body,Trace).
+eval_not(N,[not(A)|R],[not_call(N,A)|Trace]) :- 
+  ground(A),
+  cl(_,A,Body),
+  M is N+1,
+  \+ eval(M,Body,_Trace),
+  eval_not(N,R,Trace).
+eval_not(N,[A|_R],[failed_call(N,A)]) :- 
+  \+ cl(_,A,_Body).
+eval_not(N,[A|R],[call(N,A)|Trace]) :- 
+  ground(A),
+  cl(_,A,Body),
+  M is N+1,
+  eval(M,Body,Trace1),!,
+  eval_not(N,R,Trace2),
+  append(Trace1,Trace2,Trace).
+
 
   %% findall(SortedExplanation,
   %%         (cl(P,Atom,Body),
@@ -263,6 +326,12 @@ replace_vars([cl(Prob,Head,Body)|R],[cl(Prob,Head3,Body3)|RT]) :-
   replace_vars(R,RT).
 
 rvars([],[],_,_).
+rvars([not(Atom)|R],[not(NAtom)|RR],VarList,N) :-
+  !,
+  Atom=..[Pred|Args],
+  rvars_args(Args,VarList,N,ArgsVars,NVarList,NN),
+  NAtom =.. [Pred|ArgsVars],
+  rvars(R,RR,NVarList,NN).
 rvars([Atom|R],[NAtom|RR],VarList,N) :-
   Atom=..[Pred|Args],
   rvars_args(Args,VarList,N,ArgsVars,NVarList,NN),

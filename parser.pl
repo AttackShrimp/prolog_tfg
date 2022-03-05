@@ -89,7 +89,9 @@ clause(cl(Prob,H,[B|T])) -->
   atom_ast(H),
   [punct(":")],
   [punct("-")],
-  atom_ast(B),
+  sep,
+  literal(B),
+  sep,
   body_ast(T),
   [punct(".")].
 
@@ -97,19 +99,48 @@ clause(cl(1,H,[B|T])) -->
   atom_ast(H),
   [punct(":")],
   [punct("-")],
-  atom_ast(B),
+  sep,
+  literal(B),
   body_ast(T),
   [punct(".")].
 
 body_ast([]) --> [].
 body_ast([Atom|T]) -->
+  sep,
   [punct(",")],
-  atom_ast(Atom),
+  sep,
+  literal(Atom),
+  sep,
   body_ast(T).
+
+sep -->
+  {true}.
+sep -->
+  [cntrl("\n")].
+
+literal(Atom) -->
+  atom_ast(Atom).
+literal(not(Atom)) -->
+  [word("not")],
+  atom_ast(Atom).
 
 atom_ast(Atom) -->
   [word(X)],
   {atom_codes(Atom,X)}.
+atom_ast(Atom) -->
+  [word(X)],
+  [punct(A)],
+  [word(Y)],
+  {word_to_term(X,Atom1),word_to_term(Y,Atom2),atom_codes(Op,A),
+    Atom =.. [(Op)|[Atom1,Atom2]]}.
+atom_ast(Atom) -->
+  [word(X)],
+  [punct(A)],
+  [punct(B)],
+  [word(Y)],
+  {word_to_term(X,Atom1),word_to_term(Y,Atom2),
+    string_concat(A,B,C),atom_codes(Op,C),
+    Atom =.. [(Op)|[Atom1,Atom2]]}.
 atom_ast(Atom) -->
   [word(P)],
   [punct("(")],
@@ -126,6 +157,7 @@ args_ast([Arg|T]) -->
   {word_to_term(H,Arg)},
   [punct(",")],
   args_ast(T).
+%missing: lists and functions in general...
 
 comment_ast([]) --> [].
 comment_ast([H|T]) -->
@@ -133,6 +165,9 @@ comment_ast([H|T]) -->
   comment_ast(T).
 comment_ast([H|T]) -->
   [punct(H)],
+  comment_ast(T).
+comment_ast([H|T]) -->
+  [other(H)],
   comment_ast(T).
 
 pred_ast([]) --> [].
