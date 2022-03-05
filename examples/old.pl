@@ -1,3 +1,6 @@
+%!read old(A,B) as: A is over B years old
+%!read student(A,B) as: A is a student with age = B
+
 old(Name,Age) :-
   student(Name,NameAge),
   NameAge >= Age.
