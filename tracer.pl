@@ -123,20 +123,26 @@ print_trace([failed_call(N,_A,S)|R]) :-
   tab(N*3),format(S),nl,
   print_trace(R).
 
+
 eval(_,[],[]).
+
 eval(N,[ret|R],Trace) :-
+  % No ! means if program has 'ret.' then the automatic backtracking will throw an error
    M is N-1,
   eval(M,R,Trace).
+
 eval(N,[A|R],[call(N,A)|Trace]) :-
   predicate_property(A,built_in),
   \+ predicate_name(A,"not/1"), 
   !,
   call(A),
   eval(N,R,Trace).
+
 eval(N,[not(A)|R],[not_call(N,A)|Trace]) :- 
   ground(A),
   \+ cl(_,A,_Body),
   eval(N,R,Trace).
+
 eval(N,[not(A)|R],[not_call(N,A)|Trace]) :- 
   ground(A),
   cl(_,A,Body),
@@ -145,6 +151,7 @@ eval(N,[not(A)|R],[not_call(N,A)|Trace]) :-
   !,
   eval(N,R,Trace2),
   append(Trace1,Trace2,Trace).
+
 eval(N,[A|R],[call(N,A)|Trace]) :- 
   cl(_,A,Body),
   append(Body,[ret|R],RB),
@@ -154,19 +161,23 @@ eval(N,[A|R],[call(N,A)|Trace]) :-
 eval_not(N,[ret|R],Trace) :-
    M is N-1,
   eval_not(M,R,Trace).
+
 eval_not(N,[not(A)|_R],[call(N,A)|Trace]) :- 
   ground(A),
   cl(_,A,Body),
   M is N+1,
   eval(M,Body,Trace).
+
 eval_not(N,[not(A)|R],[not_call(N,A)|Trace]) :- 
   ground(A),
   cl(_,A,Body),
   M is N+1,
   \+ eval(M,Body,_Trace),
   eval_not(N,R,Trace).
+
 eval_not(N,[A|_R],[failed_call(N,A)]) :- 
   \+ cl(_,A,_Body).
+
 eval_not(N,[A|R],[call(N,A)|Trace]) :- 
   ground(A),
   cl(_,A,Body),
@@ -245,54 +256,70 @@ assert_visible_preds([(Pred,N)|R]) :-
   assertz(visible(Atom)),
   assert_visible_preds(R).
 
+% Repeat code
 assert_unsafe_preds([]).
 assert_unsafe_preds([(Pred,N)|R]) :-
   functor(Atom,Pred,N),
   assertz(unsafe(Atom)),
   assert_unsafe_preds(R).
 
+% I don't understand the need for this method
 replace_vars([],[]).
+
 replace_vars([visible(L)|R],[visible(L)|RT]) :- 
   replace_vars(R,RT).
+
 replace_vars([unsafe(L)|R],[unsafe(L)|RT]) :- 
   replace_vars(R,RT).
+
 replace_vars([reading(Q,String,Vars)|R],[reading(Q3,String,V4)|RT]) :- 
   V =.. [foo|Vars],
   rvars([Q,V],[Q2,V2],[],-1),
   varnumbers([Q2,V2],[Q3,V3]),
   V3 =.. [_|V4],
   replace_vars(R,RT).
+
 replace_vars([comment(C)|R],[comment(C)|RT]) :- 
   replace_vars(R,RT).
+
 replace_vars([query(Q)|R],[query(Q3)|RT]) :- 
   rvars([Q],[Q2],[],-1),
   varnumbers([Q2],[Q3]),
   replace_vars(R,RT).
+
 replace_vars([cl(Prob,Head,Body)|R],[cl(Prob,Head3,Body3)|RT]) :- 
   rvars([Head|Body],[Head2|Body2],[],-1),
   varnumbers([Head2|Body2],[Head3|Body3]),
   replace_vars(R,RT).
 
+
 rvars([],[],_,_).
+
 rvars([not(Atom)|R],[not(NAtom)|RR],VarList,N) :-
   !,
   Atom=..[Pred|Args],
   rvars_args(Args,VarList,N,ArgsVars,NVarList,NN),
   NAtom =.. [Pred|ArgsVars],
   rvars(R,RR,NVarList,NN).
+
 rvars([Atom|R],[NAtom|RR],VarList,N) :-
   Atom=..[Pred|Args],
   rvars_args(Args,VarList,N,ArgsVars,NVarList,NN),
   NAtom =.. [Pred|ArgsVars],
   rvars(R,RR,NVarList,NN).
 
+
 rvars_args([],VarList,N,[],VarList,N).
+
 rvars_args([var(X)|R],VarList,N,['$VAR'(Num)|RR],NVarList,NN) :-
   member((X,Num),VarList),!,
   rvars_args(R,VarList,N,RR,NVarList,NN).
+
 rvars_args([var(X)|R],VarList,N,['$VAR'(M)|RR],NVarList,NN) :-
   !, M is N+1,
   rvars_args(R,[(X,M)|VarList],M,RR,NVarList,NN).
+
+% does not consider variables inside terms
 rvars_args([T|R],VarList,N,[T|RR],NVarList,NN) :-
   rvars_args(R,VarList,N,RR,NVarList,NN).
 

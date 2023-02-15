@@ -54,10 +54,12 @@ clause(comment(C)) -->
   comment_ast(C),
   [cntrl("\n")].
 
+% Can't tell the purpose of this
 clause(comment(C)) -->
   [punct("%")],
   comment_ast(C).
 
+% Can't tell the purpose of this
 clause(query(Atom)) -->
   [word("query")],
   [punct("(")],
@@ -116,10 +118,14 @@ body_ast([Atom|T]) -->
 sep -->
   {true}.
 sep -->
+  %should contain a second call to sep, as multiple newlines between predicate arguments are allowed
   [cntrl("\n")].
 
+% seems to consider 'not' as the only fx <word><word> combination (when in fact there are others)
+% there is no check to current_op to compare against all active operators
 literal(Atom) -->
   atom_ast(Atom).
+% non-determinism point
 literal(not(Atom)) -->
   [word("not")],
   atom_ast(Atom).
@@ -141,6 +147,7 @@ atom_ast(Atom) -->
   {word_to_term(X,Atom1),word_to_term(Y,Atom2),
     string_concat(A,B,C),atom_codes(Op,C),
     Atom =.. [(Op)|[Atom1,Atom2]]}.
+% Can an atom be complex ex: foo(a(b),c)?
 atom_ast(Atom) -->
   [word(P)],
   [punct("(")],
@@ -200,6 +207,7 @@ process_text(Atom,C,String,ListVars) :-
   vars_atom(Atom,Vars),
   pt(Vars,C,String,ListVars).
 
+% Doesn't detect stray variables
 pt(_Vars,[],[],[]).
 pt(Vars,[V|R],["~p"|String],[var(V)|ListVars]) :-
   member(var(V),Vars),!,

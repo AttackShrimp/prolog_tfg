@@ -299,6 +299,7 @@ call_into_term(P, Term, Result) :-
 inverse(P, A, B) :-
     call(P, B, A).
 
+% T_Args = pred(arg1,arg2) --> T_X_Args = pred(X,arg1,arg2)
 pad(T_Args, X, T_X_Args) :-
     T_Args   =.. [T|Args],
     T_X_Args =.. [T, X| Args].
