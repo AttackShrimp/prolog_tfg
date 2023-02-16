@@ -17,6 +17,9 @@
 :- dynamic query/1.
 :- dynamic counter/1.
 
+:- dynamic passed/2.
+:- dynamic possible_passed/1.
+
 counter(0).
 
 % empty set of preds: no renaming is required
@@ -63,8 +66,25 @@ load(File) :-
   %nl,print(read_problog_program(File,Program)),nl,
   replace_vars(Program,ProgramVars),
   %nl,print(replace_vars(Program,ProgramVars)),nl,
-  assert_clauses(ProgramVars).
+  assert_clauses(ProgramVars),
   %query(Atom),
+
+  retractall(passed(_,_)),
+  retractall(possible_passed(_)),
+  findall(cl(1,Head,Body), cl(1,Head,Body), Clauses), 
+  phrase(add_assertion(0, Possible_passed), Clauses),
+  assertz(possible_passed(Possible_passed)), !.
+
+add_assertion(_, []) --> [].
+add_assertion(Curr, [(Name / Arity - Curr, 0) | T]) --> 
+  [cl(1, H, B)], 
+  {
+    retract(cl(1,H,B)),
+    functor(H, Name, Arity),
+    assertz(cl(1, H, [assertz(passed(Name / Arity, Curr))|B])),
+    Next is Curr + 1
+  },
+  add_assertion(Next, T).
 
 process_traces([],[]).
 process_traces([T|R],[TT|RR]) :-
@@ -87,12 +107,89 @@ process_trace([failed_call(N,A)|R],[failed_call(N,A,S2)|RT]) :-
   process_trace(R,RT).
 
 run(Q) :-
+  
+  retractall(passed(_,_)),
+
   findall(Trace,eval(0,Q,Trace),Traces),
   %print(Traces),nl,
-  process_traces(Traces,Traces2),  
+  process_traces(Traces,_Traces2),  
   %print(Traces2),nl,
-  print_traces(Traces2),
-  write_traces(Traces2). 
+  %print_traces(Traces2),
+  %write_traces(Traces2),
+
+  findall(F/A - Order, passed(F/A, Order), Calls), 
+  process_calls(Calls, Result),
+  header,
+  pretty(Result), !.
+
+
+process_calls(Calls, Calls_perc) :- 
+  possible_passed(Pos_passed),
+  phrase(count_duplicates(Calls), [Pos_passed], [Calls_set]),
+  to_key_value(Calls_set, Calls_keys),
+  keysort(Calls_keys, Calls_sorted),
+  global_percentage(Calls_sorted, Calls_gperc),
+  phrase(local_percentage(Calls_gperc, Calls_perc), [[]], [_Local_Occ]).
+
+count_duplicates([]) --> [].
+count_duplicates([E | T]) --> 
+  state(Original, Modified),
+  {
+    append(Start, [(E, Num) | End], Original),
+    M is Num + 1,
+    append(Start, [(E, M) | End], Modified)
+  },
+  !,
+  count_duplicates(T).
+% This last instance should never happen:
+count_duplicates([E | T]) --> state(S, [(E, 1) | S]), count_duplicates(T).
+
+to_key_value([],[]).
+to_key_value([(F/A - Order, Amount) | Ta], [Order - (F/A - Amount) | Tb]) :- to_key_value(Ta, Tb).
+
+global_percentage(In, Out) :- global_percentage(In, Out, 0, _Total).
+global_percentage([], [], Acc, Acc).
+global_percentage([Line - (Functor / Arity - Occ) | Ta], [Line - (Functor / Arity - Occ, G_percentage) | Tb], Acc, Res) :-
+  New_acc is Acc + Occ,
+  global_percentage(Ta, Tb, New_acc, Res),
+  (Res =:= 0 -> G_percentage = 0; G_percentage is Occ / Res).
+
+local_percentage([], []) --> [].
+local_percentage([Line - (Functor / Arity - Occ, G_percentage) | T], [Line - (Functor / Arity - Occ, G_percentage, L_percentage) | T_local]) --> 
+  state(Original, Modified),
+  {
+    append(Start, [(Functor / Arity, Num) | End], Original),
+    M is Num + Occ,
+    append(Start, [(Functor / Arity, M) | End], Modified)
+  },
+  !,
+  local_percentage(T, T_local),
+  state(Final),
+  {
+    member((Functor / Arity, L_Occ), Final),
+    (L_Occ =:= 0 -> L_percentage = 0; L_percentage is Occ / L_Occ)
+  }.
+local_percentage([Line - (Functor / Arity - Occ, G_percentage) | T], [Line - (Functor / Arity - Occ, G_percentage, L_percentage) | T_local]) --> 
+  state(S, [(Functor / Arity, Occ) | S]),
+  local_percentage(T, T_local),
+  state(Final),
+  {
+    member((Functor / Arity, L_Occ), Final),
+    (L_Occ =:= 0 -> L_percentage = 0; L_percentage is Occ / L_Occ)
+  }.
+
+header :-
+  format('~n~|~95t~20+ ~w ~|~95t~20+~n~n', ['CODE COVERAGE']).
+
+pretty([]).
+pretty([Line - (Functor / Arity - Occ, G_percentage, L_percentage) | T]) :- 
+  format('~|~t~d~3+  ~w/~w~25+# ~w~10+G ~2f~10+L ~2f~n',[Line, Functor, Arity, Occ, G_percentage, L_percentage]),
+  pretty(T).
+
+state(S0),     [S0] --> [S0].
+state(S0, S1), [S1] --> [S0].
+
+
 
 write_traces(Trace) :-
   open('temp.txt',write,Stream),
