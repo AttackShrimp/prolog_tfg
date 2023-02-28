@@ -1,1 +1,0 @@
-[[call(0,old(john,18),"john is over 18 years old"),call(1,student(john,19),"john is a student with age = 19"),call(1,19>=18,"19>=18")]]

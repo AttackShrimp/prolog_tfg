@@ -1,0 +1,1 @@
+[[call(0,mother(anna,fanny),"anna is the mother of fanny"),call(1,assertz(passed(mother/2,1)),"assertz(passed(mother/2,1))")],[call(0,mother(daniel,fanny),"daniel is the mother of fanny"),call(1,assertz(passed(mother/2,2)),"assertz(passed(mother/2,2))")]]
