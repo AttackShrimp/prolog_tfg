@@ -1,4 +1,4 @@
-:- module(instrumenter, [instrument/1]).
+:- module(instrumenter, [instrument/2]).
 /** <module> instrumenter
 
 This module instruments a .pl file, adding function calls to build a basis for
@@ -8,14 +8,16 @@ code coverage tools to use.
 
 */
 
-%% instrument(+File : string).
+%% instrument(+File : string, -Term_signatures: list).
 %
 % Succeeds after instrumenting and running consult over a prolog code file.
 %
-% @param File The name of the file to consult.
-instrument(File) :-
+% @param File              The name of the file to consult.
+% @param Term_signatures   The list of signatures for all instrumented
+%                          terms in the form <ID>-<Functor>/<Arity>.
+instrument(File, Term_signatures) :-
    call_over_file(File, read_terms, read, Terms),
-   insert_logger_calls(Terms, Logged_terms),
+   insert_logger_calls(Terms, Logged_terms, Term_signatures),
    call_over_file('temp.pl', write_terms, write, Logged_terms),
    !,
    [temp]. % We could close the file here, it is transparent to the user
@@ -23,7 +25,7 @@ instrument(File) :-
 %% call_over_file(+File : string, +Functor: atom,  +Mode: atom, -Result: term).
 %
 % Succeeds after calling a compound term with the stream of a file, obtaining
-% a result
+% a result.
 %
 % @param File     The name of the file to generate the stream.
 % @param Functor  The functor of the compound term to call as
@@ -38,11 +40,11 @@ call_over_file(File, Functor, Mode, Result) :-
 
 %% read_terms(+Stream : stream, -Terms: list).
 %
-% Succeeds after reading all lines of a file into a list
+% Succeeds after reading all lines of a file into a list.
 %
-% @param Stream   The stream to read from
+% @param Stream   The stream to read from.
 % @param Terms    A list of terms resulting from calling read_term/3 over
-%                 every line
+%                 every line.
 read_terms(Stream, Terms) :-
    read_term(Stream, Term, []),
    process_term(Term, Stream, Terms).
@@ -51,15 +53,17 @@ process_term(end_of_file, _Stream, []).
 process_term(Term, Stream, [Term | Tail]) :-
    read_terms(Stream, Tail).
 
-%% insert_logger_calls(+Terms : list, -Logged_terms: list).
+%% insert_logger_calls(+Terms : list, -Logged_terms: list, -Term_names: list).
 %
 % Succeeds after adding a call to the logger to every term in a list.
+% Every modified term is saved as a signature in the <Term_names> list.
 %
 % @param Terms          The list of terms to be modified.
 % @param Logged_terms   The resulting list after modifications.
-insert_logger_calls(Terms, Logged_terms) :-
+% @param Term_names  The list of term signatures in form <ID>-<Functor>/<Arity>.
+insert_logger_calls(Terms, Logged_terms, Term_names) :-
    univ_to(Terms, Univ_terms),
-   log_terms(Univ_terms, Logged_univ_terms, 0),
+   log_terms(Univ_terms, Logged_univ_terms, 0, Term_names),
    univ_to(Logged_terms, Logged_univ_terms).
 
 %% univ_to(+Input : list, -Output: list).
@@ -67,13 +71,13 @@ insert_logger_calls(Terms, Logged_terms) :-
 % Succeeds after calling univ/1 over every term in a list.
 %
 % @param Input    The list of terms.
-% @param Output   A list of lists resulting from calling univ over every element
+% @param Output   A list of lists resulting from calling univ over every element.
 univ_to([],[]).
 univ_to([Term | ITail], [Univ_term | OTail]) :-
    Term =.. Univ_term,
    univ_to(ITail, OTail).
 
-%% log_terms(+Input : list, -Output: list, +Counter: integer).
+%% log_terms(+Input : list, -Output: list, +Counter: integer, -Term_names: list).
 %
 % Succeeds after adding a pred_start/2 call to every term in a list.
 % 
@@ -84,41 +88,46 @@ univ_to([Term | ITail], [Univ_term | OTail]) :-
 % Terms who's functor is an operator (excluding :- and -->) are not modified.
 % pred_start/2 is given 2 arguments, a counter representing the term number and
 % a term Functor/Arity as a signature.
+% Every modified term is saved as a signature in the <Term_names> list.
 %
 % @param Input       The list of terms to be modified.
 % @param Output      The resulting list after modifications.
-% @param Counter     The counter representing the term number
-log_terms([],[], _Counter).
+% @param Counter     The counter representing the term number.
+% @param Term_names  The list of term signatures in form <ID>-<Functor>/<Arity>.
+log_terms([],[], _Counter, []).
 log_terms(
       [[:-, Head, Body]                                        | ITail], 
       [[:-, Head, (pred_start(Counter, Functor/Arity), Body)]  | OTail],
-      Counter) :-
+      Counter,
+      [Counter - Functor / Arity                               | TTail]) :-
    !,
    functor(Head, Functor, Arity),
    Next is Counter + 1,
-   log_terms(ITail, OTail, Next).
+   log_terms(ITail, OTail, Next, TTail).
 log_terms(
       [[-->, Head, Body]                                        | ITail], 
       [[-->, Head, ({pred_start(Counter, Functor/Arity)},Body)] | OTail],
-      Counter) :-
+      Counter,
+      [Counter - Functor / Arity                                | TTail]) :-
    !,
    functor(Head, Functor, Arity_DCG),
    Arity is Arity_DCG + 2,
    Next is Counter + 1,
-   log_terms(ITail, OTail, Next).
+   log_terms(ITail, OTail, Next, TTail).
 log_terms(
       [[Functor | Args]                                 | ITail], 
       [[:-, Head, pred_start(Counter, Functor / Arity)] | OTail],
-      Counter) :-
+      Counter,
+      [Counter - Functor / Arity                        | TTail]) :-
    findall(Op, current_op(_,_,Op), Operands),
    not(member(Functor, Operands)),
    !,
    Head =.. [Functor | Args],
    functor(Head, Functor, Arity),
    Next is Counter + 1,
-   log_terms(ITail, OTail, Next).
-log_terms([Unrecognized | ITail], [Unrecognized | OTail], Counter) :-
-   log_terms(ITail, OTail, Counter).
+   log_terms(ITail, OTail, Next, TTail).
+log_terms([Unrecognized | ITail], [Unrecognized | OTail], Counter, Term_names) :-
+   log_terms(ITail, OTail, Counter, Term_names).
 
 %% write_terms(+Stream : stream, +Terms: list).
 %
