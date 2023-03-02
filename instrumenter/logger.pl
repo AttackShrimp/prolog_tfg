@@ -1,4 +1,4 @@
-:- module(logger, [init/1, pred_start/2, clean/0]).
+:- module(logger, [init/1, pred_start/2, coverage/1, clean/0]).
 /** <module> logger
 
 This module is in charge of asserting and managing the calls to pred_start
@@ -27,8 +27,8 @@ init([Number - Functor / Arity | Tail]) :-
 % If this specific parameter combination has already been asserted, adds
 % 1 to the counter.
 %
-% @param Number      ID of the predicate.
-% @param Name        Functor/Arity of the predicate head.
+% @param Number      The ID of the predicate.
+% @param Name        The Functor/Arity of the predicate head.
 pred_start(Number, Functor / Arity) :-
     coverage(Number - Functor / Arity, Count),
     !,
@@ -37,6 +37,18 @@ pred_start(Number, Functor / Arity) :-
     assertz(coverage(Number - Functor / Arity, Next)).
 pred_start(Number, Functor / Arity) :-
     assertz(coverage(Number - Functor / Arity, 1)).
+
+%% coverage(-Covered_terms: list).
+%
+% Succeeds after setting Covered_terms to the list of terms with 
+% number of calls to pred_start.
+%
+% @param Covered_terms  The list of terms with number of calls in the format
+% <CallNumber> - <Functor> / <Arity> / <Number>
+coverage(Covered_terms) :-
+    findall(Count - Functor / Arity / Number, 
+        coverage(Number - Functor / Arity, Count),
+        Covered_terms).
 
 %% clean.
 %
