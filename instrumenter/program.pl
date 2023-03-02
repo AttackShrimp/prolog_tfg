@@ -49,7 +49,7 @@ process_term(Term, Stream, [Term | Tail]) :-
 % @param Logged_terms   The resulting list after modifications.
 insert_logger_calls(Terms, Logged_terms) :-
    univ_to(Terms, Univ_terms),
-   log_terms(Univ_terms, Logged_univ_terms),
+   log_terms(Univ_terms, Logged_univ_terms, 0),
    univ_to(Logged_terms, Logged_univ_terms).
 
 %% univ_to(+Input : list, -Output: list).
@@ -63,39 +63,52 @@ univ_to([Term | ITail], [Univ_term | OTail]) :-
    Term =.. Univ_term,
    univ_to(ITail, OTail).
 
-%% log_terms(+Input : list, -Output: list).
+%% log_terms(+Input : list, -Output: list, +Counter: integer).
 %
-% Succeeds after adding a pred_start call to every term in a list.
+% Succeeds after adding a pred_start/2 call to every term in a list.
 % 
 % 3 different types of terms are recognized:
 %     - Predicates - <head> :- <body>  becomes <head> :- pred_start, <body>
 %     - DCG's      - <head> --> <body> becomes <head> --> {pred_start}, <body>
 %     - terms      - <term>            becomes <term> :- pred_start
 % Terms who's functor is an operator (excluding :- and -->) are not modified.
+% pred_start/2 is given 2 arguments, a counter representing the term number and
+% a term Functor/Arity as a signature.
 %
 % @param Input       The list of terms to be modified.
 % @param Output      The resulting list after modifications.
-log_terms([],[]).
+% @param Counter     The counter representing the term number
+log_terms([],[], _Counter).
 log_terms(
-      [[:-, Head, Body]               | ITail], 
-      [[:-, Head, (pred_start, Body)] | OTail]) :-
+      [[:-, Head, Body]                                        | ITail], 
+      [[:-, Head, (pred_start(Counter, Functor/Arity), Body)]  | OTail],
+      Counter) :-
    !,
-   log_terms(ITail, OTail).
+   functor(Head, Functor, Arity),
+   Next is Counter + 1,
+   log_terms(ITail, OTail, Next).
 log_terms(
-      [[-->, Head, Body]                | ITail], 
-      [[-->, Head, ({pred_start},Body)] | OTail]) :-
+      [[-->, Head, Body]                                        | ITail], 
+      [[-->, Head, ({pred_start(Counter, Functor/Arity)},Body)] | OTail],
+      Counter) :-
    !,
-   log_terms(ITail, OTail).
+   functor(Head, Functor, Arity_DCG),
+   Arity is Arity_DCG + 2,
+   Next is Counter + 1,
+   log_terms(ITail, OTail, Next).
 log_terms(
-      [[Functor | Args] | ITail], 
-      [[:-, Head, pred_start] | OTail]) :-
+      [[Functor | Args]                                 | ITail], 
+      [[:-, Head, pred_start(Counter, Functor / Arity)] | OTail],
+      Counter) :-
    findall(Op, current_op(_,_,Op), Operands),
    not(member(Functor, Operands)),
    !,
    Head =.. [Functor | Args],
-   log_terms(ITail, OTail).
-log_terms([Unrecognized | ITail], [Unrecognized | OTail]) :-
-   log_terms(ITail, OTail).
+   functor(Head, Functor, Arity),
+   Next is Counter + 1,
+   log_terms(ITail, OTail, Next).
+log_terms([Unrecognized | ITail], [Unrecognized | OTail], Counter) :-
+   log_terms(ITail, OTail, Counter).
 
 %% write_terms(+Stream : stream, +Terms: list).
 %
