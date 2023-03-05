@@ -7,6 +7,7 @@ the logger.
 @author Daniel Santamarina
 
 */
+:- use_module(utils, [rearrange/4]).
 
 %% visualize(+Signatures : list).
 %
@@ -18,15 +19,15 @@ the logger.
 visualize(Signatures) :-
     percentages(Signatures, G_percentages, signature_to_global),
     percentages(Signatures, L_percentages, signature_to_local),
-    rearrange(Signatures, 
+    utils:rearrange(Signatures, 
         Occurances - Functor / Arity / Number, 
         Number - Functor / Arity / Occurances,
         Signature_table),
-    keysort(Signature_table, Signature_table_sorted),
-    maplist(add_column, Signature_table_sorted, G_percentages, G_percentage_table),
+    maplist(add_column, Signature_table, G_percentages, G_percentage_table),
     maplist(add_column, G_percentage_table, L_percentages, Percentage_table),
+    keysort(Percentage_table, Print_table),
     header,
-    pretty(Percentage_table).
+    pretty(Print_table).
 
 %% percentages(+Signatures : list, -Percentages : list, :Signature_to_id : term).
 %
@@ -103,27 +104,6 @@ signature_to_local(Signature, Local) :-
 
 state(S0),     [S0] --> [S0].
 state(S0, S1), [S1] --> [S0].
-
-%% rearrange(+Input : list, +Original : term, +Rearranged : term, -Output : list).
-%
-% Succeeds after matching <Input> element-wise with <Original>, giving the 
-% bounded <Rearranged> values for the corresponding element in Output.
-%
-% For every element, <Original> and <Rearranged> are copied as fresh variables
-% retaining the bingings between each other. This way each element in <Input> is
-% matched with a fresh <Original> term to generate a <Rearranged> term.
-%
-% @param Input          The list of elements matching with Original
-% @param Original       The term matching with each element in Input and bounded 
-%                       to <Rearranged>.
-% @param Rearranged     The term bounded to Original.
-% @param Output         The list of each bounded <Rearranged>
-rearrange([], _Original, _Rearranged, []).
-rearrange([IElement | ITail], Original, Rearranged, [OElement | OTail]) :-
-    copy_term((Original, Rearranged), (Fresh_original, Fresh_rearranged)),
-    rearrange(ITail, Fresh_original, Fresh_rearranged, OTail),
-    IElement = Original,
-    OElement = Rearranged.
 
 add_column(Key - Columns, Column_to_add, Key - Columns/Column_to_add).
 

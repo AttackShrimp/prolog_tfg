@@ -1,4 +1,4 @@
-:- module(logger, [init/1, pred_start/2, coverage/1, clean/0]).
+:- module(logger, [init/1, pred_start/2, coverage/1, clean/0, stop/0]).
 /** <module> logger
 
 This module is in charge of asserting and managing the calls to pred_start
@@ -52,6 +52,18 @@ coverage(Covered_terms) :-
 
 %% clean.
 %
-% Succeeds after retracting all asserted coverage/2 terms.
+% Succeeds after setting all coverage/2 terms back to 0, restarting the logger
+% counter.
+%
+% All existing asserted coverage/2 terms are retracted and asserted with the 
+% counter set to 0.
 clean :-
+    findall(coverage(A,0), coverage(A,_), Logs),
+    retractall(coverage(_,_)),
+    maplist(assertz, Logs).
+
+%% stop.
+%
+% Succeeds after retracting all asserted coverage/2 terms.
+stop :-
     retractall(coverage(_,_)).

@@ -1,26 +1,35 @@
-:- module(instrumenter, [instrument/2]).
+:- module(instrumenter, [instrument/3]).
 /** <module> instrumenter
 
 This module instruments a .pl file, adding function calls to build a basis for
 code coverage tools to use.
 
+When additional options are given, the <launcher> module is called to append
+additional instrumentation.
+
 @author Daniel Santamarina
 
 */
+:- use_module(utils, [univ_to/2]).
+:- use_module(launcher, [configure_launcher/4]).
 
-%% instrument(+File : string, -Term_signatures: list).
+%% instrument(+File : string, -Term_signatures: list, +Options: list).
 %
-% Succeeds after instrumenting and running consult over a prolog code file.
+% Succeeds after instrumenting a prolog code file.
+%
+% This predicated makes a call to the launcher module, sending the specified
+% options. This module will append it's own coverage predicates the the existing
+% instrumenter ones.
 %
 % @param File              The name of the file to consult.
 % @param Term_signatures   The list of signatures for all instrumented
 %                          terms in the form <ID>-<Functor>/<Arity>.
-instrument(File, Term_signatures) :-
+% @param Options           The option list.
+instrument(File, Term_signatures, Options) :-
    call_over_file(File, read_terms, read, Terms),
    insert_logger_calls(Terms, Logged_terms, Term_signatures),
-   call_over_file('temp.pl', write_terms, write, Logged_terms),
-   !,
-   [temp]. % We could close the file here, it is transparent to the user
+   configure_launcher(Logged_terms, Term_signatures, Options, Logged_launcher_terms),
+   call_over_file('temp.pl', write_terms, write, Logged_launcher_terms).
 
 %% call_over_file(+File : string, +Functor: atom,  +Mode: atom, -Result: term).
 %
@@ -62,20 +71,9 @@ process_term(Term, Stream, [Term | Tail]) :-
 % @param Logged_terms   The resulting list after modifications.
 % @param Term_names  The list of term signatures in form <ID>-<Functor>/<Arity>.
 insert_logger_calls(Terms, Logged_terms, Term_names) :-
-   univ_to(Terms, Univ_terms),
+   utils:univ_to(Terms, Univ_terms),
    log_terms(Univ_terms, Logged_univ_terms, 0, Term_names),
-   univ_to(Logged_terms, Logged_univ_terms).
-
-%% univ_to(+Input : list, -Output: list).
-%
-% Succeeds after calling univ/1 over every term in a list.
-%
-% @param Input    The list of terms.
-% @param Output   A list of lists resulting from calling univ over every element.
-univ_to([],[]).
-univ_to([Term | ITail], [Univ_term | OTail]) :-
-   Term =.. Univ_term,
-   univ_to(ITail, OTail).
+   utils:univ_to(Logged_terms, Logged_univ_terms).
 
 %% log_terms(+Input : list, -Output: list, +Counter: integer, -Term_names: list).
 %
