@@ -29,7 +29,7 @@ instrument(File, Term_signatures, Options) :-
    call_over_file(File, read_terms, read, Terms),
    insert_logger_calls(Terms, Logged_terms, Term_signatures),
    configure_launcher(Logged_terms, Term_signatures, Options, Logged_launcher_terms),
-   call_over_file('temp.pl', write_terms, write, Logged_launcher_terms).
+   call_over_file('.temp.pl', write_terms, write, Logged_launcher_terms).
 
 %% call_over_file(+File : string, +Functor: atom,  +Mode: atom, -Result: term).
 %
@@ -94,29 +94,29 @@ insert_logger_calls(Terms, Logged_terms, Term_names) :-
 % @param Term_names  The list of term signatures in form <ID>-<Functor>/<Arity>.
 log_terms([],[], _Counter, []).
 log_terms(
-      [[:-, Head, Body]                                        | ITail], 
-      [[:-, Head, (pred_start(Counter, Functor/Arity), Body)]  | OTail],
+      [[:-, Head, Body]                                               | ITail], 
+      [[:-, Head, (logger:pred_start(Counter, Functor/Arity), Body)]  | OTail],
       Counter,
-      [Counter - Functor / Arity                               | TTail]) :-
+      [Counter - Functor / Arity                                      | TTail]) :-
    !,
    functor(Head, Functor, Arity),
    Next is Counter + 1,
    log_terms(ITail, OTail, Next, TTail).
 log_terms(
-      [[-->, Head, Body]                                        | ITail], 
-      [[-->, Head, ({pred_start(Counter, Functor/Arity)},Body)] | OTail],
+      [[-->, Head, Body]                                               | ITail], 
+      [[-->, Head, ({logger:pred_start(Counter, Functor/Arity)},Body)] | OTail],
       Counter,
-      [Counter - Functor / Arity                                | TTail]) :-
+      [Counter - Functor / Arity                                       | TTail]) :-
    !,
    functor(Head, Functor, Arity_DCG),
    Arity is Arity_DCG + 2,
    Next is Counter + 1,
    log_terms(ITail, OTail, Next, TTail).
 log_terms(
-      [[Functor | Args]                                 | ITail], 
-      [[:-, Head, pred_start(Counter, Functor / Arity)] | OTail],
+      [[Functor | Args]                                        | ITail], 
+      [[:-, Head, logger:pred_start(Counter, Functor / Arity)] | OTail],
       Counter,
-      [Counter - Functor / Arity                        | TTail]) :-
+      [Counter - Functor / Arity                               | TTail]) :-
    findall(Op, current_op(_,_,Op), Operands),
    not(member(Functor, Operands)),
    !,

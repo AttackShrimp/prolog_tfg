@@ -29,9 +29,7 @@ configure_launcher(Terms, Term_signatures, Options, Launcher_terms) :-
     member(cmd, Options),
     !,
     create_launcher_predicates(Term_signatures, Launcher_predicates),
-    utils:univ_to(Terms, Univ_terms),
-    rename_heads(Univ_terms, Univ_terms_renamed),
-    utils:univ_to(Terms_renamed, Univ_terms_renamed),
+    mark_terms(Terms, Terms_renamed),
     append(Launcher_predicates, Terms_renamed, Launcher_terms).
  configure_launcher(Logged_terms,_,_, Logged_terms).
  
@@ -68,32 +66,42 @@ configure_launcher(Terms, Term_signatures, Options, Launcher_terms) :-
 % @param Signatures   The list of predicate names in the form 
 %                     <Functor> / <Arity>.
 % @param Launchers    The list of launchers, 3x the original in size.
- names_to_launchers([],[]).
- names_to_launchers([Functor/Arity | NTail], [First, Second, Third | LTail]) :-
+names_to_launchers([],[]).
+names_to_launchers([Functor/Arity | NTail], [First, Second, Third | LTail]) :-
     functor(Launcher, Functor, Arity),
     add_instrumenter_mark(Launcher, Predicate_call),
     First = (
         Launcher :- 
-            not_first, 
+            loader:not_first, 
             !, 
             Predicate_call),
     Second = (
         Launcher :- 
-            assertz(not_first), 
+            assertz(loader:not_first), 
             Predicate_call, 
             !, 
-            get_coverage_and_clear),
+            loader:get_coverage_and_clear),
     Third = (
         Launcher :- 
-            get_coverage_and_clear,
+            loader:get_coverage_and_clear,
             fail),
     names_to_launchers(NTail, LTail).
 
+%% mark_terms(+Terms : list, -Marked_terms: list).
+%
+% Succeeds after marking the head of each term in the list to 
+% indicate they belong to the instrumenter.
+%
+% @param Terms          The list of terms to be modified.
+% @param Marked_terms   The resulting list after modifications.
+mark_terms(Terms, Marked_terms) :-
+    utils:univ_to(Terms, Univ_terms),
+    rename_heads(Univ_terms, Univ_terms_marked),
+    utils:univ_to(Marked_terms, Univ_terms_marked).
 
 %% rename_heads(+Input : list, -Output: list).
 %
-% Succeeds after renaming the head of every term in the list adding a mark to 
-% indicate they belong to the instrumenter.
+% Succeeds after renaming the head of every term in the list.
 % 
 % Terms that are complex but not predicates are recognized and renamed in the
 % same manner.
