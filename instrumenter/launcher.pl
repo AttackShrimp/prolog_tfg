@@ -5,8 +5,6 @@ This module adds launcher code to an terms that have been processed by the
 instrumenter, adding function calls that allow processing of more fine-grained
 details by the coverage tools.
 
-@author Daniel Santamarina
-
 */
 :- use_module(utils, [rearrange/4, univ_to/2]).
 

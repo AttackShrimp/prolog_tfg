@@ -3,8 +3,6 @@
 
 This module manages the execution for the instrumented knowledge-base.
 
-@author Daniel Santamarina
-
 */
 :- use_module(instrumenter, [instrument/3]).
 :- use_module(logger, [init/1, pred_start/2, coverage/1, clean/0, stop/0]).

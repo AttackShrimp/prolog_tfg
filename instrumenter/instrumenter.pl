@@ -7,8 +7,6 @@ code coverage tools to use.
 When additional options are given, the <launcher> module is called to append
 additional instrumentation.
 
-@author Daniel Santamarina
-
 */
 :- use_module(utils, [univ_to/2]).
 :- use_module(launcher, [configure_launcher/4]).

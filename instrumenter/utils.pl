@@ -4,8 +4,6 @@
 This module contains general-purpose utility functions used by multiple
 modules.
 
-@author Daniel Santamarina
-
 */
 
 %% rearrange(+Input : list, +Original : term, +Rearranged : term, -Output : list).

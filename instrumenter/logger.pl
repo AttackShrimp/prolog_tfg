@@ -3,8 +3,6 @@
 
 This module is in charge of asserting and managing the calls to pred_start
 
-@author Daniel Santamarina
-
 */
 :- dynamic coverage/2.
 

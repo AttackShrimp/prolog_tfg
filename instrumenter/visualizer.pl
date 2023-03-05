@@ -4,8 +4,6 @@
 This module is in charge of visualizing the function calls recorded by
 the logger.
 
-@author Daniel Santamarina
-
 */
 :- use_module(utils, [rearrange/4]).
 
