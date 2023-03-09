@@ -1,4 +1,4 @@
-:- module(utils, [rearrange/4, univ_to/2]).
+:- module(utils, [rearrange/4, univ_to/2, call_over_file/4]).
 /** <module> utils
 
 This module contains general-purpose utility functions used by multiple
@@ -37,3 +37,49 @@ univ_to([],[]).
 univ_to([Term | ITail], [Univ_term | OTail]) :-
    Term =.. Univ_term,
    univ_to(ITail, OTail).
+
+%% call_over_file(+File : string, +Functor: atom,  +Mode: atom, -Result: term).
+%
+% Succeeds after calling a compound term with the stream of a file, obtaining
+% a result.
+%
+% @param File     The name of the file to generate the stream.
+% @param Functor  The functor of the compound term to call as
+%                 <Functor>(<File_Stream>, <Result>).
+% @param Mode     One of read, write, append or update.
+% @param Result   Result of the compound term call.
+call_over_file(File, Functor, Mode, Result) :-
+    open(File, Mode, FStream),
+    Predicate =.. [Functor, FStream, Result],
+    call(Predicate),
+    close(FStream). 
+ 
+ %% read_terms(+Stream : stream, -Terms: list).
+ %
+ % Succeeds after reading all lines of a file into a list of terms.
+ %
+ % @param Stream   The stream to read from.
+ % @param Terms    A list of terms resulting from calling read_term/3 over
+ %                 every line.
+ read_terms(Stream, Terms) :-
+    read_term(Stream, Term, []),
+    process_term(Term, Stream, Terms).
+ 
+ process_term(end_of_file, _Stream, []).
+ process_term(Term, Stream, [Term | Tail]) :-
+    read_terms(Stream, Tail).
+
+%% write_terms(+Stream : stream, +Terms: list).
+%
+% Succeeds after writing all terms in <Terms> into the stream.
+% 
+% After write_terms, the file is prolog-valid and can be loaded with consult.
+%
+% @param Stream   The stream to write to.
+% @param Terms    A list of terms resulting to write to the file.
+write_terms(_Stream, []).
+write_terms(Stream, [Term | Tail]) :-
+   writeq(Stream, Term),
+   write(Stream, '.'),
+   nl(Stream),
+   write_terms(Stream, Tail).
