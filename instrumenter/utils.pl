@@ -52,6 +52,7 @@ call_over_file(File, Functor, Mode, Result) :-
     open(File, Mode, FStream),
     Predicate =.. [Functor, FStream, Result],
     call(Predicate),
+    !,
     close(FStream). 
  
  %% read_terms(+Stream : stream, -Terms: list).
