@@ -10,11 +10,26 @@ details by the coverage tools.
 
 %% configure_launcher(+Terms : list, +Term_signatures: list, +Options: list, -Launcher_terms: list).
 %
-% Succeeds after adding Launcher configuration predicates to a list of 
-% prolog terms.
+% Succeeds after adding additional configuration predicates to a list of 
+% prolog terms. These predicates can have multiple layers to measure different
+% things and eventually finish by calling the original terms.
 %
-% When given the option [cmd], the launcher will be active. Otherwise, the
-% terms will remain the same and no launcher instrumentation will be added.
+% There are three possible configuration layers to add, each is selected using a
+% keyword option:
+%  - [cmd]:     The laucher option adds an initial layer allowing the coverage  
+%               to be measured directly from the prolog terminal, by simply  
+%               typing a term in the same way as if there was no code coverage 
+%               running.
+%  - [ground]:  The ground layer measures the ground terms in each predicate 
+%               before the execution is complete. This gives an indication of 
+%               what predicate parameters are in/out.
+%  - [branch]:  The branch layer measures the possible coverage for each clause
+%               branch in a predicate call, independently of whether or not the 
+%               clause ends up being chosen for execution.
+%
+% Due to the structure of the added layers, the [cmd] layer must always be the 
+% first layer in the execution if present, and therefore must be the last to be 
+% added.
 %
 % @param Terms             The list of terms of terms to process.
 % @param Term_signatures   The list of signatures for all terms in the 
@@ -25,77 +40,87 @@ details by the coverage tools.
 %                          added at the start of the list.
 configure_launcher(Terms, Term_signatures, Options, Terms_configured) :-
     get_predicate_names(Term_signatures, Names),
-    phrase(configure_launcher_options(Terms-Term_signatures, Names, Options, Max_indents), [[]], [Launcher_terms]),
+    cmd_last(Options, Options_reordered),
+    phrase(instrument_with_option(Terms-Term_signatures, Names, Options_reordered, Max_indents), [[]], [Launcher_terms]),
     mark_terms(Terms, Indented_terms, Max_indents),
     append(Indented_terms, Launcher_terms, Terms_configured).
 
-configure_launcher_options(T-TS, Names, Options, Indent) -->
-    {absorb_element(branch, Options, Other_options)},
-    configure_launcher_options(T-TS, Names, Other_options, Next_indent),
-    state(Initial, Final),
-    {
-        Indent is Next_indent + 1,
-        names_to_branches(T-TS, Names, Branch_predicates, Indent),
-        append(Initial, Branch_predicates, Final)
-    }.
-configure_launcher_options(T-TS, Names, Options, Indent) -->
-    {absorb_element(ground, Options, Other_options)},
-    configure_launcher_options(T-TS, Names, Other_options, Next_indent),
-    state(Initial, Final),
-    {
-        Indent is Next_indent + 1,
-        names_to_grounds(Names, Ground_predicates, Indent),
-        append(Initial, Ground_predicates, Final)
-    }.
-configure_launcher_options(T-TS, Names, Options, Indent) -->
-    {absorb_element(cmd, Options, Other_options)},
-    configure_launcher_options(T-TS, Names, Other_options, Next_indent),
-    state(Initial, Final),
-    {
-        Indent is Next_indent + 1,
-        names_to_launchers(Names, Launcher_predicates, Indent),
-        append(Initial, Launcher_predicates, Final)
-    }.
-configure_launcher_options(_, _, [], 0) --> state(Logged_terms, Logged_terms).
- 
-absorb_element(Elem, List, New_list) :-
-    append(L, [Elem | R], List),
+cmd_last(Options, Options_reordered) :-
+    append(A, [cmd | B], Options),
     !,
-    append(L, R, New_list).
+    append([A, B, [cmd]], Options_reordered).
+cmd_last(Options, Options).
+
+%% instrument_with_option(+Terms_and_signatures : term, +Names : list, +Options: list, +Depth: int).
+%
+% Succeeds after instrumenting every predicate following the options in 
+% <Options>. For each option a new set of predicates linked to the next depth.
+% The original predicates are not considered, only adding predicates to measure 
+% additional parameters.
+%
+% @param Terms_and_signatures   A <list>-<list> representing all predicate 
+%                               clauses in the program and their signatures.
+% @param Signatures             The list of predicate names in the form 
+%                               <Functor> / <Arity>.
+% @param Options                List of user-defined options describing what 
+%                               terms to add.
+% @param Depth                  The current instrumenter depth.
+instrument_with_option(T-TS, Names, [Option | Options], Depth) -->
+    instrument_with_option(T-TS, Names, Options, Next_depth),
+    state(Initial, Final),
+    {
+        Depth is Next_depth + 1,
+        names_to(T-TS, Names, Option, Depth, Instrumented_terms),
+        append(Initial, Instrumented_terms, Final)
+    }.
+instrument_with_option(_, _, [], 0) --> state(Logged_terms, Logged_terms).
 
 state(S0),     [S0] --> [S0].
 state(S0, S1), [S1] --> [S0].
 
+%% create_launcher_predicates(+Signatures : list, -Names_unique: list).
+%
+% Succeeds after converting <Signatures> of all clauses into a list of predicate
+% names.
+% 
+% Due to multiple clauses per predicate, clause names are sorted to remove 
+% duplicates.
+%
+% @param Signatures   The list of predicate clause signatures in the form 
+%                     <Counter> - <Functor> / <Arity>.
+% @param Names_unique The list of predicate names in the form 
+%                     <Functor> / <Arity>.
 get_predicate_names(Signatures, Names_unique) :-
     utils:rearrange(Signatures, _Counter - Functor / Arity, 
        Functor / Arity, Names),
        sort(Names, Names_unique).
-
-%% create_launcher_predicates(+Signatures : list, -Launchers: list).
-%
-% Succeeds after creating launcher predicates for every distinct signature
-% in <Signatures>.
-% 
-% Signatures are understood to contain duplicates, and are therefore sorted to
-% remove any.
-%
-% @param Signatures   The list of predicate signatures in the form 
-%                     <Counter> - <Functor> / <Arity>.
-% @param Launchers    The generated list of launcher predicates.
- create_launcher_predicates(Signatures, Launchers, Indent) :-
-    utils:rearrange(Signatures, _Counter - Functor / Arity, 
-       Functor / Arity, Names),
-    sort(Names, Names_unique),
-    names_to_launchers(Names_unique, Launchers, Indent).
  
-%% names_to_launchers(+Names : list, -Launchers: list).
+%% names_to(+Terms_and_signatures : term, +Names : list, +Option: term, +Depth: int, -Instrumented_terms: list).
+%
+% Succeeds after instrumenting every name in <Names> according to a given 
+% option.
+%
+% @param Terms_and_signatures   A <list>-<list> representing all predicate 
+%                               clauses in the program and their signatures.
+% @param Signatures             The list of predicate names in the form 
+%                               <Functor> / <Arity>.
+% @param Option                 User-defined option describing what to instrument
+% @param Depth                  The current instrumenter depth.
+% @param Instrumented_terms     The list of instrumented terms.
+names_to(_-_, Names, cmd, Depth, Instrumented_terms) :-
+    names_to_launchers(Names, Instrumented_terms, Depth).
+names_to(_-_, Names, ground, Depth, Instrumented_terms) :-
+    names_to_grounds(Names, Instrumented_terms, Depth).
+names_to(Terms-Term_sigatures, Names, branch, Depth, Instrumented_terms) :-
+    names_to_branches(Terms-Term_sigatures, Names, Instrumented_terms, Depth).
+%% names_to_launchers(+Names : list, -Launchers: list, +Depth: int).
 %
 % Succeeds after creating launcher predicates for every name in <Names>.
 % 
 % Three launcher predicates are created for every name, each represent a
 % different behaviour:
 %   - First:  When the predicate is not the initial query and simply redirects
-%             to the original.
+%             to the next instrumenter depth.
 %   - Second: When the predicate is the initial query and succeeds when 
 %             redirecting.
 %   - Third:  When the predicate is the initial query and fails when 
@@ -104,12 +129,13 @@ get_predicate_names(Signatures, Names_unique) :-
 % @param Signatures   The list of predicate names in the form 
 %                     <Functor> / <Arity>.
 % @param Launchers    The list of launchers, 3x the original in size.
+% @param Depth        The current instrumenter depth.
 names_to_launchers([],[],_).
-names_to_launchers([Functor/Arity | NTail], [First, Second, Third | LTail], Indent) :-
+names_to_launchers([Functor/Arity | NTail], [First, Second, Third | LTail], Depth) :-
     functor(Predicate, Functor, Arity),
-    add_instrumenter_mark(Predicate, Predicate_call, Indent),
-    Past_indent is Indent - 1,
-    add_instrumenter_mark(Predicate, Launcher, Past_indent),
+    add_instrumenter_marks(Predicate, Predicate_call, Depth),
+    Past_depth is Depth - 1,
+    add_instrumenter_marks(Predicate, Launcher, Past_depth),
     First = (
         Launcher :- 
             loader:not_first, 
@@ -125,61 +151,96 @@ names_to_launchers([Functor/Arity | NTail], [First, Second, Third | LTail], Inde
         Launcher :- 
             loader:get_coverage_and_clear,
             fail),
-    names_to_launchers(NTail, LTail, Indent).
+    names_to_launchers(NTail, LTail, Depth).
 
+%% names_to_grounds(+Names : list, -Grounds: list, +Depth: int).
+%
+% Succeeds after creating a Ground predicate for every name in <Names>. Each
+% Ground predicate will log the ground of the predicate and redirect to the 
+% next instrumenter depth.
+%
+% @param Signatures   The list of predicate names in the form 
+%                     <Functor> / <Arity>.
+% @param Grounds      The list of Ground predicates.
+% @param Depth        The current instrumenter depth.
 names_to_grounds([],[],_).
-names_to_grounds([Functor/Arity | NTail], [First | LTail], Indent) :-
+names_to_grounds([Functor/Arity | NTail], [First | LTail], Depth) :-
     functor(Predicate, Functor, Arity),
-    add_instrumenter_mark(Predicate, Predicate_call, Indent),
-    Past_indent is Indent - 1,
-    add_instrumenter_mark(Predicate, Launcher, Past_indent),
+    add_instrumenter_marks(Predicate, Predicate_call, Depth),
+    Past_depth is Depth - 1,
+    add_instrumenter_marks(Predicate, Launcher, Past_depth),
     First = (
         Launcher :- 
             logger:pred_ground(Predicate),
             Predicate_call),
-    names_to_grounds(NTail, LTail, Indent).
+    names_to_grounds(NTail, LTail, Depth).
 
+%% names_to_branches(+Terms_and_signatures: term, +Names : list, -Branches: list, +Depth: int).
+%
+% Succeeds after creating a Branch predicate for every name in <Names>. Each
+% Branch predicate will contain all possible clauses to unify for the predicate
+% to test it's branching capacity.
+%
+% Similarly to other instrumenter functions, each Branch predicate redirects to
+% the next instrumenter depth.
+% 
+% @param Terms_and_signatures   A <list>-<list> representing all predicate 
+%                               clauses in the program and their signatures.
+% @param Signatures             The list of predicate names in the form 
+%                               <Functor> / <Arity>.
+% @param Branches               The list of Branch predicates.
+% @param Depth                  The current instrumenter depth.
 names_to_branches(_, [],[],_).
-names_to_branches(T-TS, [Functor/Arity | NTail], [First | LTail], Indent) :-
+names_to_branches(T-TS, [Functor/Arity | NTail], [First | LTail], Depth) :-
     functor(Predicate, Functor, Arity),
-    add_instrumenter_mark(Predicate, Predicate_call, Indent),
-    Past_indent is Indent - 1,
-    add_instrumenter_mark(Predicate, Launcher, Past_indent),
-    maplist(extract_heads(Functor/Arity), TS, T, Filtered_heads),
-    exclude(=(none), Filtered_heads, Heads),
+    add_instrumenter_marks(Predicate, Predicate_call, Depth),
+    Past_depth is Depth - 1,
+    add_instrumenter_marks(Predicate, Launcher, Past_depth),
+
+    get_clause_heads(Functor / Arity, T-TS, Clause_heads),
     First = (
         Launcher :- 
-            logger:pred_branch(Heads, Predicate),
+            logger:pred_branch(Clause_heads, Predicate),
             Predicate_call),
-    names_to_branches(T-TS, NTail, LTail, Indent).
+    names_to_branches(T-TS, NTail, LTail, Depth).
 
-extract_heads(Functor / Arity, _Counter - Functor / Arity, T, Head) :-
-    T =.. Univ_term,
-    Univ_term = [Operand, Head, _Body],
-    member(Operand, [:-, -->]).
-extract_heads(Functor / Arity, _Counter - Functor / Arity, T, T) :-
-    T =.. Univ_term,
-    Univ_term = [Functor, _Arguments],
-    findall(Op, current_op(_,_,Op), Operands),
-    not(member(Functor, Operands)),
-    !.
-extract_heads(Functor / Arity, _Counter - Functor / Arity, T, T).
-extract_heads(_, _, _, none).
+%% get_clause_heads(+Signature : term, +Terms_and_signatures : term, -Clause_heads: list).
+%
+% Succeeds after finding all clause heads in the term list of 
+% <Terms_and_signatures> that match in name with <Signature>. In other words,
+% finds every clause in the program belonging to a predicate with name 
+% <Signature>. 
+% 
+% @param Signature              The predicate name in the form <Functor> / 
+%                               <Arity>.
+% @param Terms_and_signatures   A <list>-<list> representing all predicate 
+%                               clauses in the program and their signatures.
+% @param Clause_heads           The list of clauses belonging to <Signature>.
+get_clause_heads(
+        FA, 
+        [Term | Terms] - [_ - FA | Term_signatures], 
+        [Head | Clause_heads]) :-
+    Term =.. [_Operand, Head, _Body],
+    !,
+    get_clause_heads(FA, Terms - Term_signatures, Clause_heads).
+get_clause_heads(_, []-[], []) :- !.
+get_clause_heads(FA, [_ | T] - [_ | TS], Clause_heads) :-
+    get_clause_heads(FA, T-TS, Clause_heads).
 
-
-%% mark_terms(+Terms : list, -Marked_terms: list).
+%% mark_terms(+Terms : list, -Marked_terms: list, +Depth: int).
 %
 % Succeeds after marking the head of each term in the list to 
 % indicate they belong to the instrumenter.
 %
 % @param Terms          The list of terms to be modified.
 % @param Marked_terms   The resulting list after modifications.
-mark_terms(Terms, Marked_terms, Indent) :-
+% @param Depth          The depth of the marks to add.
+mark_terms(Terms, Marked_terms, Depth) :-
     utils:univ_to(Terms, Univ_terms),
-    rename_heads(Univ_terms, Univ_terms_marked, Indent),
+    rename_heads(Univ_terms, Univ_terms_marked, Depth),
     utils:univ_to(Marked_terms, Univ_terms_marked).
 
-%% rename_heads(+Input : list, -Output: list).
+%% rename_heads(+Input : list, -Output: list, +Depth: int).
 %
 % Succeeds after renaming the head of every term in the list.
 % 
@@ -188,32 +249,34 @@ mark_terms(Terms, Marked_terms, Indent) :-
 %
 % @param Input        The list of terms to be modified.
 % @param Output       The resulting list after modifications.
+% @param Depth        The depth of the renaming.    
 rename_heads([],[], _).
-rename_heads([[Operand, Head, Body] | ITail], [[Operand, Head_renamed, Body]| OTail], Indent) :-
+rename_heads([[Operand, Head, Body] | ITail], [[Operand, Head_renamed, Body]| OTail], Depth) :-
     member(Operand, [:-, -->]),
-    add_instrumenter_mark(Head, Head_renamed, Indent),
-    rename_heads(ITail, OTail, Indent).
-rename_heads([[Functor | Args] | ITail], [[Functor_renamed | Args] | OTail], Indent) :-
+    add_instrumenter_marks(Head, Head_renamed, Depth),
+    rename_heads(ITail, OTail, Depth).
+rename_heads([[Functor | Args] | ITail], [[Functor_renamed | Args] | OTail], Depth) :-
     findall(Op, current_op(_,_,Op), Operands),
     not(member(Functor, Operands)),
     !,
-    add_instrumenter_mark(Functor, Functor_renamed, Indent),
-    rename_heads(ITail, OTail, Indent).
-rename_heads([Unrecognized | ITail], [Unrecognized | OTail], Indent) :-
-    rename_heads(ITail, OTail, Indent).
+    add_instrumenter_marks(Functor, Functor_renamed, Depth),
+    rename_heads(ITail, OTail, Depth).
+rename_heads([Unrecognized | ITail], [Unrecognized | OTail], Depth) :-
+    rename_heads(ITail, OTail, Depth).
 
-%% add_instrumenter_mark(+Term : term, -Term_renamed: term).
+%% add_instrumenter_marks(+Term : term, -Term_renamed: term, +Amount: int).
 %
-% Succeeds after renaming the functor of a term, adding '_i' to indicate it
-% belongs to the instrumenter.
+% Succeeds after renaming the functor of <Term>, adding <Amount> amount of 
+% '_i' instrumenter indication marks after the functor name.
 % 
 % Terms that are atoms are similarly renamed.
 %
 % @param Term           The term to be modified.
-% @param Term_renamed   The <Term> with a '_i' added.
-add_instrumenter_mark(Term, Term_renamed, Indent) :-
+% @param Term_renamed   The <Term> with <Amount> '_i's added.
+% @param Amount         The amount of '_i's to add.
+add_instrumenter_marks(Term, Term_renamed, Amount) :-
     Term =.. [Functor | Args],
-    length(Mark_list, Indent), 
+    length(Mark_list, Amount), 
     maplist(=('_i'),Mark_list), 
     Concat_list = [Functor | Mark_list], 
     atomic_list_concat(Concat_list, Functor_renamed),
