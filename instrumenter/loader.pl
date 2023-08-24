@@ -5,7 +5,7 @@ This module manages the execution for the instrumented knowledge-base.
 
 */
 :- use_module(instrumenter, [instrument/3]).
-:- use_module(logger, [init/1, pred_start/2, coverage/1, clean/0, stop/0]).
+:- use_module(logger, [init/2, coverage/1, clean/0, stop/0]).
 :- use_module(visualizer, [visualize/1]).
 
 :- dynamic not_first/0.
@@ -19,7 +19,7 @@ This module manages the execution for the instrumented knowledge-base.
 % @param Commands  The commands to be passed on to the instrumenter.
 load_kb(File, Commands) :-
     instrumenter : instrument(File, Term_sigs, Commands),
-    logger : init(Term_sigs),
+    logger : init(Term_sigs, Commands),
     !.
 
 %% get_coverage_and_clear.

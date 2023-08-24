@@ -1,4 +1,4 @@
-:- module(utils, [rearrange/4, univ_to/2, call_over_file/4]).
+:- module(utils, [rearrange/4, univ_to/2, call_over_file/4, zip/6, maplist_nth/2, transpose/2]).
 /** <module> utils
 
 This module contains general-purpose utility functions used by multiple
@@ -26,6 +26,15 @@ rearrange([IElement | ITail], Original, Rearranged, [OElement | OTail]) :-
     rearrange(ITail, Fresh_original, Fresh_rearranged, OTail),
     IElement = Original,
     OElement = Rearranged.
+
+zip([],[],_,_,_,[]).
+zip([A | At],[B | Bt], A_unif, B_unif, O_unif, [O | Ot]) :-
+   copy_term((A_unif, B_unif, O_unif), (Ac, Bc, Oc)),
+   zip(At, Bt, Ac, Bc, Oc, Ot),
+   A = A_unif,
+   B = B_unif,
+   O = O_unif.
+
 
 %% univ_to(+Input : list, -Output: list).
 %
@@ -84,3 +93,37 @@ write_terms(Stream, [Term | Tail]) :-
    write(Stream, '.'),
    nl(Stream),
    write_terms(Stream, Tail).
+
+maplist_nth(Goal, Lists) :-
+   transpose(Lists, ArgsLists),
+   maplist(univ(Goal), ArgsLists, Goals), 
+   maplist(call, Goals).
+
+transpose(Matrix, Transpose) :-
+   Matrix=[Col|_], 
+   length(Col, Size),
+   numlist(1, Size, Increments),
+   maplist(get_row(Matrix), Increments, Transpose).
+get_row(Matrix, Num, Elems) :- maplist(nth1_failsafe(Num), Matrix, Elems).
+
+nth1_failsafe(Num, List, Elem) :- nth1(Num, List, Elem), !.
+nth1_failsafe(_, _, none).
+
+
+univ(Term, Args, Added) :- 
+   Term =.. Univ_term,
+   clear_module(Univ_term, Cleared, Module),
+   append(Cleared, Args, Added_term),
+   Term_added =.. Added_term,
+   add_module(Term_added, Module, Added).
+
+clear_module([:,M,T], C, M):-T=..C,!.
+clear_module(M, M, none).
+add_module(T,none,T):-!.
+add_module(T,M,M:T).
+
+print_array([]).
+print_array([Head | Tail]) :-
+    write(Head),       
+    write(', '),       
+    print_array(Tail). 
