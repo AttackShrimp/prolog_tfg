@@ -42,21 +42,6 @@ the logger.
 % @param Signature_to_id    A predicate in the form <Signature_to_id>(In, Out)
 %                           converting a signature in the form <Functor>/
 %                           <Arity>/<Number> to an ID.
-percentages(Signatures, Percentages, Signature_to_id) :-
-    phrase(
-        percentages(Signatures, Percentages, Signature_to_id), 
-        [[]], 
-        [_Per_occ]).
-
-percentages([], [], _Signature_to_id) --> [].
-percentages(
-        [Occurances - Signature | Tail_terms], 
-        [Percent | Tail_perc], 
-        Signature_to_id) --> 
-    {call(Signature_to_id, Signature, Id)},
-    find_and_add(Id, Occurances),
-    percentages(Tail_terms, Tail_perc, Signature_to_id),
-    calculate_percent(Id, Occurances, Percent).
 
 %% find_and_add(+Element : term, +Amount : integer, _DCG_A : list, _DCG_B : list).
 %
@@ -68,17 +53,7 @@ percentages(
 % @param Element    The ID of an element to find in the DCG.
 % @param Amount     The number by which to increment the current count for
 %                   <Element>.
-find_and_add(Element, Amount) -->
-    state(Initial, Final),
-    {
-        append(Start, [(Element, Count) | End], Initial),
-        !,
-        New_count is Count + Amount,
-        append(Start, [(Element, New_count) | End], Final)
-    }.
-find_and_add(Element, Amount) -->
-    state(Initial, Final),
-    {Final = [(Element, Amount)| Initial]}.
+
 
 %% calculate_percent(+Element : term, +Amount : integer, -Percent : float, _DCG_A : list, _DCG_B : list).
 %
@@ -89,49 +64,10 @@ find_and_add(Element, Amount) -->
 % @param Element    The ID of an element to find in the DCG.
 % @param Amount     The numerator of the proportion.
 % @param Percent    The result of <Amount> over the given total in the DCG.
-calculate_percent(Element, Amount, Percent) -->
-    state(Final),
-    {
-      member((Element, Total), Final),
-      (Total =:= 0 ->
-          Percent = 0
-          ; 
-          Percent is Amount / Total)
-    }.
-
-signature_to_global(_Signature, all).
-signature_to_local(Signature, Local) :-
-    Signature = Local / _.
-
-state(S0),     [S0] --> [S0].
-state(S0, S1), [S1] --> [S0].
-
-add_column(Key - Columns, Column_to_add, Key - Columns/Column_to_add).
-
-header :-
-    format('~n~|~95t~20+ ~w ~|~95t~20+~n~n', ['CODE COVERAGE']).
-
-pretty([]).
-pretty([_ - Functor / Arity / Occurances / Global_p / Local_p | Tail]) :- 
-    format('~w/~w~25+# ~w~10+G ~2f~10+L ~2f~n',
-        [Functor, Arity, Occurances, Global_p, Local_p]),
-    pretty_clauses(Tail, 1, Functor / Arity).
-
-pretty_clauses([_ - FA / Occurances / Global_p / Local_p | Tail], Clause_number, FA) :- 
-    format('~4+~w~21+# ~w~10+G ~2f~10+L ~2f~n',
-      [Clause_number, Occurances, Global_p, Local_p]),
-    Next_Clause_number is Clause_number + 1,
-    pretty_clauses(Tail, Next_Clause_number, FA).
-pretty_clauses(Data, _, _) :- pretty(Data).
-
-print_array([]).
-print_array([Head | Tail]) :-
-    write(Head),       
-    write(', '), nl,  
-    print_array(Tail). 
 
 
 visualize(Coverage) :-
+    % write(Coverage),
     table_dimensions(predicate-Coverage, D),
     level(predicate-Coverage, Length_info),
     process(D, F, predicate-Coverage, Length_info), 
@@ -212,9 +148,8 @@ process(dim(hor, _Len, Tree), [[Header, nl] | Table], Header - Structure, Length
     
     maplist(add_hor_structure, Length_info, Table_1, Table_2),
     
-    %TODO: Change this double transpose into just adding nones
-    utils:transpose(Table_2, Table_3),utils:transpose(Table_3, Table_4),
-    
+    pad(Table_2, Table_4),
+
     maplist(substitute_nones, Table_4, Table_5),
     utils:transpose(Table_5, Table_6),
 
@@ -230,6 +165,15 @@ process_coverage_col(Header - Structure, [[Header, pad(4), coverage]| Table]) :-
         [' ', K, pad(5), size(7), C],
         Table).
 
+pop([E | T], E, T) :- !.
+pop([], none, []).
+    
+pad(Empty_rows, Empty_rows) :- maplist('='([]), Empty_rows), !.
+pad(Rows, Result) :-
+    maplist(pop, Rows, Elems, Remaining),
+    pad(Remaining, Next),
+    maplist(pop, Result, Elems, Next).
+
 substitute_nones(List, Result) :-
     get_skeleton(List, Skeleton),
     maplist(substitute_none(Skeleton), List, Result).
@@ -237,7 +181,7 @@ substitute_nones(List, Result) :-
 get_skeleton(List, Skeleton) :-
     exclude(=(none), List, [_,E | _]),
     include(is_operator, E, Skeleton).
-get_skeleton(_,(size(6), pad(5), size(7), pad(8))).
+get_skeleton(_,[size(6), pad(5), size(7), pad(8)]).
 
 substitute_none(Skeleton, none, Skeleton).
 substitute_none(_, E, E):- not(E=none).

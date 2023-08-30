@@ -180,9 +180,10 @@ get_clause_heads(ID, IDs - Structures, Heads) :-
 % @param Terms          The list of terms to be modified.
 % @param Marked_terms   The resulting list after modifications.
 % @param Depth          The depth of the marks to add.
+mark_term(_, ignore, Head - _, Head).
 mark_term(Depth, Type, Head - Body, Marked_term) :-
     add_instrumenter_marks(Head, Marked_head, Depth),
-    process_term(Marked_term, Type, _, Marked_head - Body).
+    instrumenter:process_term(Marked_term, Type, _, Marked_head - Body).
 
 %% add_instrumenter_marks(+Term : term, -Term_renamed: term, +Amount: int).
 %
