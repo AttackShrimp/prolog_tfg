@@ -1,4 +1,4 @@
-:- module(instrumenter, [instrument/3, process_term/4, log_term/7]).
+:- module(instrumenter, [instrument/3]).
 /** <module> instrumenter
 
 This module instruments a .pl file, adding function calls to build a basis for
@@ -8,133 +8,250 @@ When additional options are given, the <launcher> module is called to append
 additional instrumentation.
 
 */
-:- use_module(utils, [univ_to/2, call_over_file/4, rearrange/4, maplist_nth/2, zip/6]).
-:- use_module(launcher, [insert_launcher_calls/5]).
+:- use_module(utils, [call_over_file/4]).
+:- use_module(kb, [
+   read_and_process/2, 
+   empty/1, 
+   pop_term/3, 
+   funct/2, 
+   head/2, 
+   cl_num/2, 
+   join/2, 
+   mark_term/3, 
+   mark_terms/3, 
+   init_kb/1,
+   pop_terms/3,
+   unify_remaining/2,
+   instrument_term/4,
+   filter_by_funct/3,
+   write_to_file/2]).
 
-%% instrument(+File : string, -Term_signatures: list, +Options: list).
-%
-% Succeeds after instrumenting a prolog code file.
-%
-% This predicated makes a call to the launcher module, sending the specified
-% options. This module will append it's own coverage predicates the the existing
-% instrumenter ones.
-%
-% @param File              The name of the file to consult.
-% @param Term_signatures   The list of signatures for all instrumented
-%                          terms in the form <ID>-<Functor>/<Arity>.
-% @param Options           The option list.
-instrument(File, Predicates, Options) :-
-   utils:call_over_file(File, read_terms, read, Terms),
 
-   maplist(process_term, Terms, Types, IDs, Structures),
 
-   reduce_count(IDs, Predicates),
+instrument(File, KB, Options) :-
 
-   unfold(Predicates, Terms_clauses),
+   kb : read_and_process(File, KB),
 
-   insert_logger_calls(Types, Terms_clauses, Structures, Logged_Types, Logged_structures),
+   coverage_goals(KB, Goals_cov),
 
-   utils:zip(IDs, Logged_Types, ID_1, Type_1, ID_1-Type_1, ID_and_Type),
-
-   list_to_set(ID_and_Type, ID_and_Type_Predicates),
-
-   utils:zip(Logged_Pred_IDs, Logged_Pred_Types, ID_2, Type_2, ID_2-Type_2, ID_and_Type_Predicates),
+   kb : instrument(front, Goals_cov, KB, KBI),
    
-   launcher:insert_launcher_calls(Options, Logged_Pred_Types, Logged_Pred_IDs, Logged_Types-IDs-Logged_structures, Launcher_terms),
+   launchers_options(Options, KBI, KBL),
 
-   utils:call_over_file('.temp.pl', write_terms, write, Launcher_terms).
+   kb : write_to_file('.temp.pl', KBL).
 
 
-reduce_count(L1, L2) :- reduce_count(L1, L2, 1).
-reduce_count([H, H | T], Red, Count) :-
-    !,
-    Next is Count + 1,
-    reduce_count([H | T], Red, Next).
-reduce_count([H | T], [H - Count | Red], Count) :-
-    reduce_count(T, Red, 1).
-reduce_count([], [], _).
 
-unfold(Input, Output) :-
-   maplist(unfold_term, Input, Output_2D),
-   flatten(Output_2D, Output).
+coverage_goals(KB, []) :- kb : empty(KB).
+coverage_goals(KB, [logger : coverage(clause, Functor, Clause) | Goals]) :- 
+   kb : pop_term(KB, Term, KB_popped),
+   kb : funct(Functor, Term),
+   kb : cl_num(Clause, Term),
+   coverage_goals(KB_popped, Goals).
 
-unfold_term(ID-Count, Output) :-
-   numlist(1, Count, Increments),
-   utils:rearrange(Increments,
-      Number,
-      ID - Number,
-      Output).
 
-process_term(Predicate, fact, Name / Arity, Predicate - true) :-
-   functor(Predicate, Name, Arity),
-   not(current_op(_,_,Name)),
-   !. % Y
-process_term(Predicate, rule, Name / Arity, Head - Body) :-
-   functor(Predicate, :-, 2), 
-   !, % Y
-   arg(1, Predicate, Head),
-   arg(2, Predicate, Body),
-   functor(Head, Name, Arity).
-process_term(Predicate, dcg, Name / Arity, Head - Body) :-
-   functor(Predicate, -->, 2),
-   !, % Y
-   arg(1, Predicate, Head),
-   arg(2, Predicate, Body),
-   functor(Head, Name, Arity).
-process_term(Predicate, ignore, _, Predicate - fail).
 
-%% insert_logger_calls(+Terms : list, -Logged_terms: list, -Term_names: list).
+
+
+
+reorder_options(Options, Options_reordered) :-
+   append(A, [cmd | B], Options),
+   !,
+   append([[cmd], A, B], Options_reordered).
+reorder_options(Options, Options).
 %
-% Succeeds after adding a call to the logger to every term in a list.
-% Every modified term is saved as a signature in the <Term_names> list.
+launchers_options(Options, KB, KBL) :-
+   reorder_options(Options, Options_reordered),
+   launchers_options(Options_reordered, KB, KBL, 0).
+
+
+launchers_options([Option | Ot], KB, KBLs_joined, Depth) :-
+   launchers(Option, Depth, KB, KBL),
+   Next_depth is Depth + 1,
+   launchers_options(Ot, KB, KBLs, Next_depth),
+   kb : join([KBL, KBLs], KBLs_joined).
+
+launchers_options([], KB, KB_marked, Depth) :-
+   generate_mark(Depth, Mark),
+   kb : mark_terms(Mark, KB, KB_marked).
+
+generate_mark(0, '').
+generate_mark(Number, Mark) :-
+   Number > 0,
+   atom_concat('_', Number, Mark).
+
+
+
+
+launchers(_, _, KB, KBL) :- 
+   kb : empty(KB), 
+   kb : init_kb(KBL).
+launchers(Option, Depth, KB, KBL) :-
+   kb : pop_term(KB, Term, KB_popped),
+   kb : cl_num(1, Term),
+   !,
+   term_launcher(Option, Depth, Term, KB, Launchers),
+   kb : pop_terms(KBL, Launchers, KBL_popped),
+   launchers(Option, Depth, KB_popped, KBL_popped).
+launchers(Option, Depth, KB, KBL) :-
+   kb : pop_term(KB, _, KB_popped),
+   launchers(Option, Depth, KB_popped, KBL).
+
+% This is a disaster
+term_launcher(Option, Depth, Term, KB, Launchers) :-
+   kb : clear_head(Term, Term_empty),
+
+   generate_mark(Depth, LMark),
+   kb : mark_term(LMark, Term_empty, Term_lmark),
+
+   Next_depth is Depth + 1,
+   generate_mark(Next_depth, LLMark),
+   kb : mark_term(LLMark, Term_empty, Term_llmark),
+   kb : head(Call, Term_llmark),
+   
+   kb : body(Call, Launcher),
+   kb : unify_remaining(Term_lmark, Launcher),
+   
+   term_launcher_instrument(Option, Term, Launcher, KB, Launchers).
+
+term_launcher_instrument(cmd, _Term, Launcher, _KB, [Launcher_1, Launcher_2, Launcher_3]) :-
+   kb : instrument_term(
+      front, (
+         loader:not_first,
+         !
+      ), 
+      Launcher, 
+      Launcher_1),
+   kb : instrument_term(
+      both, (
+         assertz(loader:not_first)
+      ) / (
+         !,
+         loader:get_coverage_and_clear
+      ), 
+      Launcher, 
+      Launcher_2),
+   kb : instrument_term(
+      replace, (
+         loader:get_coverage_and_clear,
+         fail
+      ), 
+      Launcher, 
+      Launcher_3).
+
+term_launcher_instrument(ground, Term, Launcher, _KB, [Launcher_1]) :-
+   kb : funct(Funct, Term),
+   kb : head(Head, Term),
+   kb : instrument_term(
+      front, (
+         logger:coverage(ground, Funct, Head)
+      ), 
+      Launcher, 
+      Launcher_1).
+
+term_launcher_instrument(branch, Term, Launcher, KB, [Launcher_1]) :-
+   kb : funct(Funct, Term),
+   kb : head(Head, Term),
+   kb : filter_by_funct(Funct, KB, KB_clauses),
+   kb : heads(Clause_heads, KB_clauses),
+   kb : instrument_term(
+      front, (
+         logger:coverage(branch, Funct, Clause_heads - Head)
+      ), 
+      Launcher, 
+      Launcher_1).
+
+
+% @param Clause_heads           The list of clauses belonging to <Signature>.
+
+%% create_launcher_predicates(+Signatures : list, -Names_unique: list).
+%
+% Succeeds after converting <Signatures> of all clauses into a list of predicate
+% names.
+% 
+% Due to multiple clauses per predicate, clause names are sorted to remove 
+% duplicates.
+%
+% @param Signatures   The list of predicate clause signatures in the form 
+%                     <Counter> - <Functor> / <Arity>.
+% @param Names_unique The list of predicate names in the form 
+%                     <Functor> / <Arity>.
+
+
+%% names_to(+Terms_and_signatures : term, +Names : list, +Option: term, +Depth: int, -Instrumented_terms: list).
+%
+% Succeeds after instrumenting every name in <Names> according to a given 
+% option.
+%
+% @param Terms_and_signatures   A <list>-<list> representing all predicate 
+%                               clauses in the program and their signatures.
+% @param Signatures             The list of predicate names in the form 
+%                               <Functor> / <Arity>.
+% @param Option                 User-defined option describing what to instrument
+% @param Depth                  The current instrumenter depth.
+% @param Instrumented_terms     The list of instrumented terms.
+%% names_to_launchers(+Names : list, -Launchers: list, +Depth: int).
+%
+% Succeeds after creating launcher predicates for every name in <Names>.
+% 
+% Three launcher predicates are created for every name, each represent a
+% different behaviour:
+%   - First:  When the predicate is not the initial query and simply redirects
+%             to the next instrumenter depth.
+%   - Second: When the predicate is the initial query and succeeds when 
+%             redirecting.
+%   - Third:  When the predicate is the initial query and fails when 
+%             redirecting.
+%
+% @param Signatures   The list of predicate names in the form 
+%                     <Functor> / <Arity>.
+% @param Launchers    The list of launchers, 3x the original in size.
+% @param Depth        The current instrumenter depth.
+
+%% names_to_branches(+Terms_and_signatures: term, +Names : list, -Branches: list, +Depth: int).
+%
+% Succeeds after creating a Branch predicate for every name in <Names>. Each
+% Branch predicate will contain all possible clauses to unify for the predicate
+% to test it's branching capacity.
+%
+% Similarly to other instrumenter functions, each Branch predicate redirects to
+% the next instrumenter depth.
+% 
+% @param Terms_and_signatures   A <list>-<list> representing all predicate 
+%                               clauses in the program and their signatures.
+% @param Signatures             The list of predicate names in the form 
+%                               <Functor> / <Arity>.
+% @param Branches               The list of Branch predicates.
+% @param Depth                  The current instrumenter depth.
+
+%% get_clause_heads(+Signature : term, +Terms_and_signatures : term, -Clause_heads: list).
+%
+% Succeeds after finding all clause heads in the term list of 
+% <Terms_and_signatures> that match in name with <Signature>. In other words,
+% finds every clause in the program belonging to a predicate with name 
+% <Signature>. 
+% 
+% @param Signature              The predicate name in the form <Functor> / 
+%                               <Arity>.
+% @param Terms_and_signatures   A <list>-<list> representing all predicate 
+%                               clauses in the program and their signatures.
+
+%% mark_terms(+Terms : list, -Marked_terms: list, +Depth: int).
+%
+% Succeeds after marking the head of each term in the list to 
+% indicate they belong to the instrumenter.
 %
 % @param Terms          The list of terms to be modified.
-% @param Logged_terms   The resulting list after modifications.
-% @param Term_names  The list of term signatures in form <ID>-<Functor>/<Arity>.
-insert_logger_calls(Types, Terms_clauses, Structures, Log_types, Log_structures) :-
-   maplist(log_predicate, Terms_clauses, Coverage_predicates),
-   utils:maplist_nth(instrumenter:log_term(front), [Types, Coverage_predicates, Structures, Log_types, _, Log_structures]).
+% @param Marked_terms   The resulting list after modifications.
+% @param Depth          The depth of the marks to add.
 
-%% log_terms(+Input : list, -Output: list, +Counter: integer, -Term_names: list).
+%% add_instrumenter_marks(+Term : term, -Term_renamed: term, +Amount: int).
 %
-% Succeeds after adding a pred_start/2 call to every term in a list.
+% Succeeds after renaming the functor of <Term>, adding <Amount> amount of 
+% '_i' instrumenter indication marks after the functor name.
 % 
-% 3 different types of terms are recognized:
-%     - Predicates - <head> :- <body>  becomes <head> :- pred_start, <body>
-%     - DCG's      - <head> --> <body> becomes <head> --> {pred_start}, <body>
-%     - terms      - <term>            becomes <term> :- pred_start
-% Terms who's functor is an operator (excluding :- and -->) are not modified.
-% pred_start/2 is given 2 arguments, a counter representing the term number and
-% a term Functor/Arity as a signature.
-% Every modified term is saved as a signature in the <Term_names> list.
+% Terms that are atoms are similarly renamed.
 %
-% @param Input       The list of terms to be modified.
-% @param Output      The resulting list after modifications.
-% @param Counter     The counter representing the term number.
-% @param Term_names  The list of term signatures in form <ID>-<Functor>/<Arity>.
-log_predicate(Functor / Arity - Clause, logger:coverage(clause, Functor / Arity, Clause)).
-
-log_term(_, fact, Cov_pred, Head - _, rule, 
-   (Head :- Cov_pred), Head - Cov_pred).
-
-log_term(front, rule, Cov_pred, Head - Body, rule,
-   (Head :- Cov_pred, Body), Head - (Cov_pred, Body)).
-
-log_term(back, rule, Cov_pred, Head - Body, rule, 
-   (Head :- Body, Cov_pred), Head - (Cov_pred, Body)).
-
-log_term(both, rule, Cov_pred_front / Cov_pred_back, Head - Body, rule, 
-   (Head :- Cov_pred_front, Body, Cov_pred_back), 
-   Head - (Cov_pred_front, Body, Cov_pred_back)).
-
-log_term(front, dcg, Cov_pred, Head - Body, dcg,
-   (Head --> {Cov_pred}, Body), Head - ({Cov_pred}, Body)).
-
-log_term(back, dcg, Cov_pred, Head - Body, dcg,
-   (Head --> Body, {Cov_pred}), Head - ({Cov_pred}, Body)).
-
-log_term(both, dcg, Cov_pred_front / Cov_pred_back, Head - Body, dcg,
-   (Head --> {Cov_pred_front}, Body, {Cov_pred_back}), 
-   Head - ({Cov_pred_front}, Body, {Cov_pred_back})).
-
-log_term(_, ignore, _, Predicate - _, _, Predicate, Predicate - _).
+% @param Term           The term to be modified.
+% @param Term_renamed   The <Term> with <Amount> '_i's added.
+% @param Amount         The amount of '_i's to add.
