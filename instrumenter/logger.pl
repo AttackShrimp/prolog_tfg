@@ -9,6 +9,15 @@ This module is in charge of asserting and managing the calls to pred_start
 :- dynamic branches/2.
 
 :- use_module(utils, [rearrange/4]).
+:- use_module(kb, [
+    map_over/5, 
+    empty/1, 
+    init_kb/1, 
+    pop_term/3, 
+    peek_term/2, 
+    funct/2, 
+    cl_num/2, 
+    funct/3]).
 
 %% init(+Term_signatures : list)
 %
@@ -17,11 +26,42 @@ This module is in charge of asserting and managing the calls to pred_start
 %
 % @param Term_signatures   The list of signatures for all terms to handle
 %                          terms in the form <ID>-<Functor>/<Arity>.
-init(Term_sigatures, Commands) :-
-    maplist(create_coverage_predicate(Commands), Term_sigatures, Predicates),
+init(Commands, KB) :-
+    filter_kb(KB, KBF),
+    kb : map_over(
+        Term, 
+        logger : create_coverage_predicate(Commands, Term, Predicate), 
+        Predicate,
+        Predicates,
+        KBF),
     maplist(assertz, Predicates).
 
-create_coverage_predicate(Commands, Functor / Arity - Occurances, Predicate) :-
+
+filter_kb(KB, KBF) :-
+    kb : empty(KB),
+    kb : init_kb(KBF).
+filter_kb(KB, KBF) :-
+    kb : pop_term(KB, Term, KB_popped),
+    kb : peek_term(KB_popped, Term_next),
+    kb : funct(Funct_t, Term),
+    kb : funct(Funct_tn, Term_next),
+    Funct_t \= Funct_tn,
+    kb : pop_term(KBF, Term, KBF_popped),
+    filter_kb(KB_popped, KBF_popped).
+filter_kb(KB, KBF) :-
+    kb : pop_term(KB, Term, KB_popped),
+    kb : empty(KB_popped),
+    kb : pop_term(KBF, Term, KBF_popped),
+    filter_kb(KB_popped, KBF_popped).
+filter_kb(KB, KBF) :-
+    kb : pop_term(KB, _, KB_popped),
+    filter_kb(KB_popped, KBF).
+
+create_coverage_predicate(Commands, Term, Predicate) :-
+    kb : funct(Funct, Term),
+    kb : cl_num(Occurances, Term),
+    kb : funct(Funct, Name, Arity),
+
     numlist(1, Occurances, Increments),
     utils:rearrange(Increments,
         Number,
@@ -32,7 +72,7 @@ create_coverage_predicate(Commands, Functor / Arity - Occurances, Predicate) :-
     add_option(CL_1, Commands, branch, branch - [], CL_2),
     CL_3 = [clause - Empty_clauses | CL_2],
 
-    Predicate = coverage(Functor / Arity, CL_3).
+    Predicate = coverage(Name / Arity, CL_3).
 
 add_option(L, Commands, Contains, E, [E | L]) :- member(Contains, Commands).
 add_option(L, _, _, _, L).

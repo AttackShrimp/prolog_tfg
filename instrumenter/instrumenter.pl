@@ -16,6 +16,7 @@ additional instrumentation.
    funct/2, 
    head/2, 
    cl_num/2, 
+   type/2,
    join/2, 
    mark_term/3, 
    mark_terms/3, 
@@ -24,7 +25,8 @@ additional instrumentation.
    unify_remaining/2,
    instrument_term/4,
    filter_by_funct/3,
-   write_to_file/2]).
+   write_to_file/2,
+   map_over/5]).
 
 
 
@@ -32,7 +34,7 @@ instrument(File, KB, Options) :-
 
    kb : read_and_process(File, KB),
 
-   coverage_goals(KB, Goals_cov),
+   coverage_goals(Goals_cov, KB),
 
    kb : instrument(front, Goals_cov, KB, KBI),
    
@@ -41,16 +43,17 @@ instrument(File, KB, Options) :-
    kb : write_to_file('.temp.pl', KBL).
 
 
+coverage_goals(Goals, KB) :-
+   kb : map_over(
+      Term, 
+      instrumenter:coverage_goal(Term, Coverage_goal), 
+      Coverage_goal, 
+      Goals, 
+      KB).
 
-coverage_goals(KB, []) :- kb : empty(KB).
-coverage_goals(KB, [logger : coverage(clause, Functor, Clause) | Goals]) :- 
-   kb : pop_term(KB, Term, KB_popped),
+coverage_goal(Term, logger : coverage(clause, Functor, Clause)) :-
    kb : funct(Functor, Term),
-   kb : cl_num(Clause, Term),
-   coverage_goals(KB_popped, Goals).
-
-
-
+   kb : cl_num(Clause, Term).
 
 
 
@@ -89,6 +92,8 @@ launchers(_, _, KB, KBL) :-
 launchers(Option, Depth, KB, KBL) :-
    kb : pop_term(KB, Term, KB_popped),
    kb : cl_num(1, Term),
+   kb : type(Type, Term),
+   Type \= ignore,
    !,
    term_launcher(Option, Depth, Term, KB, Launchers),
    kb : pop_terms(KBL, Launchers, KBL_popped),
@@ -97,7 +102,6 @@ launchers(Option, Depth, KB, KBL) :-
    kb : pop_term(KB, _, KB_popped),
    launchers(Option, Depth, KB_popped, KBL).
 
-% This is a disaster
 term_launcher(Option, Depth, Term, KB, Launchers) :-
    kb : clear_head(Term, Term_empty),
 
@@ -141,7 +145,13 @@ term_launcher_instrument(cmd, _Term, Launcher, _KB, [Launcher_1, Launcher_2, Lau
 
 term_launcher_instrument(ground, Term, Launcher, _KB, [Launcher_1]) :-
    kb : funct(Funct, Term),
-   kb : head(Head, Term),
+
+   kb : head(Head_term, Term),
+   kb : head(Head_launcher, Launcher),
+   functor(Head_term, Name, _),
+   Head_launcher =.. [_ | Args],
+   Head =.. [Name | Args],
+
    kb : instrument_term(
       front, (
          logger:coverage(ground, Funct, Head)
@@ -151,7 +161,13 @@ term_launcher_instrument(ground, Term, Launcher, _KB, [Launcher_1]) :-
 
 term_launcher_instrument(branch, Term, Launcher, KB, [Launcher_1]) :-
    kb : funct(Funct, Term),
-   kb : head(Head, Term),
+
+   kb : head(Head_term, Term),
+   kb : head(Head_launcher, Launcher),
+   functor(Head_term, Name, _),
+   Head_launcher =.. [_ | Args],
+   Head =.. [Name | Args],
+
    kb : filter_by_funct(Funct, KB, KB_clauses),
    kb : heads(Clause_heads, KB_clauses),
    kb : instrument_term(

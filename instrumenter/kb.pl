@@ -1,10 +1,13 @@
 :- module(kb, [
     read_and_process/2, 
     empty/1, 
-    pop_term/3, 
+    pop_term/3,
+    peek_term/2,
     funct/2, 
+    funct/3,
     head/2, 
     cl_num/2, 
+    type/2,
     join/2, 
     mark_term/3, 
     mark_terms/3, 
@@ -15,7 +18,8 @@
     instrument_term/4,
     filter_by_funct/3,
     write_to_file/2,
-    clear_head/2]).
+    clear_head/2,
+    map_over/5]).
  
 
 :- use_module(utils, [call_over_file/4]).
@@ -67,6 +71,9 @@ pop_term([
             structures(St)
         ]).
 
+peek_term(KB, Term) :-
+    pop_term(KB, Term, _).
+
 pop_terms(KB, [Term | Terms], KBP) :-
     pop_term(KB, Term, KB_popped),
     pop_terms(KB_popped, Terms, KBP).
@@ -105,8 +112,22 @@ heads([Head | Heads], KB) :-
     pop_term(KB, Term, KB_popped),
     head(Head, Term),
     heads(Heads, KB_popped).
-% ------------------------------------------------------------------------------
 
+map_over(_, _, _, [], KB) :- empty(KB).
+map_over(Term, Goal, Result, [Result | Results], KB) :-
+    copy_term((Term, Goal, Result), (Term_n, Goal_n, Result_n)),
+    pop_term(KB, Term, KB_popped),
+    call(Goal),
+    map_over(Term_n, Goal_n, Result_n, Results, KB_popped).
+
+generate(_, _, _, KB_start, KB_end) :- empty(KB_start), init_kb(KB_end).
+generate(Term, Goal, Result, KB_start, KB_end) :- 
+    copy_term((Term, Goal, Result), (Term_n, Goal_n, Result_n)),
+    pop_term(KB_start, Term, KBS_popped),
+    call(Goal),
+    pop_term(KB_end, Result, KBE_popped),
+    generate(Term_n, Goal_n, Result_n, KBS_popped, KBE_popped).
+% ------------------------------------------------------------------------------
 
 read_and_process(File, KB) :-
     utils:call_over_file(File, read_terms, read, File_terms),
@@ -121,6 +142,7 @@ read_and_process(File, KB) :-
     structures(Structures, KB).
 
 %
+
 instrument(_, [], KB, KBI) :- empty(KB), init_kb(KBI).
 instrument(Position, [Goal | Goals], KB, KBI) :-
     pop_term(KB, Term, KB_popped),
@@ -196,7 +218,7 @@ term_composition(Predicate, dcg, Functor, Structure) :-
     kb : funct(Functor, Name, Arity),
     kb : structure(Structure, Head, Body),
     functor(Head, Name, Arity).
-term_composition(Predicate, ignore, _, Structure) :-
+term_composition(Predicate, ignore, none, Structure) :-
     kb : structure(Structure, Predicate, fail).
 %
 clause_nums(Functors, Clause_nums) :-
@@ -220,12 +242,8 @@ unfold_counted(Input, Output) :-
 unfold_term(_-Count, Increments) :-
    numlist(1, Count, Increments).
 %
-mark_terms(_, KB, KB_marked) :- empty(KB), init_kb(KB_marked).
 mark_terms(Mark, KB, KBM) :-
-    pop_term(KB, Term, KB_popped),
-    mark_term(Mark, Term, Term_marked),
-    pop_term(KBM, Term_marked, KBM_popped),
-    mark_terms(Mark, KB_popped, KBM_popped).
+    generate(Term, mark_term(Mark, Term, Term_marked), Term_marked, KB, KBM).
 
 clear_head(Term, Term_cleared) :-
     head(Head_term, Term),
@@ -241,6 +259,7 @@ mark_term(Mark, Term, Term_marked) :-
     funct(Funct, Term),
     funct(Funct, Name, Arity),
     head(Head, Term),
+    body(Body, Term),
     Head =.. [Name | Args],
     atom_concat(Name, Mark, Name_marked),
     Head_marked =.. [Name_marked | Args],
@@ -248,16 +267,17 @@ mark_term(Mark, Term, Term_marked) :-
     funct(Funct_marked, Name_marked, Arity),
     funct(Funct_marked, Term_marked),
     head(Head_marked, Term_marked),
+    body(Body, Term_marked),
     unify_remaining(Term_marked, Term).
 %
-raw_terms([], KB) :- empty(KB).
-raw_terms([Term_raw | Terms_raw], KB) :-
-    pop_term(KB, Term, KB_popped),
+
+raw_terms(Terms, KB) :-
+    map_over(Term, raw_term(Term, Term_raw), Term_raw, Terms, KB).
+raw_term(Term, Term_raw) :-
     type(Type, Term),
     funct(Funct, Term),
     structure(Structure, Term),
-    term_composition(Term_raw, Type, Funct, Structure),
-    raw_terms(Terms_raw, KB_popped).
+    term_composition(Term_raw, Type, Funct, Structure).
 
 write_to_file(File, KB) :-
     raw_terms(Terms, KB),

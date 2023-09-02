@@ -18,8 +18,8 @@ This module manages the execution for the instrumented knowledge-base.
 % @param File      The string representing the name/path of the .pl file.
 % @param Commands  The commands to be passed on to the instrumenter.
 load_kb(File, Commands) :-
-    instrumenter : instrument(File, Term_sigs, Commands),
-    logger : init(Term_sigs, Commands),
+    instrumenter : instrument(File, KB, Commands),
+    logger : init(Commands, KB),
     !.
 
 %% get_coverage_and_clear.
