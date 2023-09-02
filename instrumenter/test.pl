@@ -1,7 +1,14 @@
-contiene(paella, arroz).
-contiene(paella, conejo).
-contiene(hervido, patata).
+mother(tim, anna).
+mother(anna, fanny).
+mother(daniel, fanny).
+mother(celine, gertrude).
+father(tim, bernd).
+father(anna, ephraim).
+father(daniel, ephraim).
+father(celine, daniel).
 
-carne(conejo).
+parent(X,Y) :- mother(X,Y).
+parent(X,Y) :- father(X,Y).
 
-receta_con_carne(X) :- contiene(X,Y), carne(Y).
+ancestor(X, Y) :- parent(X, Y).
+ancestor(X, Y) :- parent(X, Z), ancestor(Z, Y).
